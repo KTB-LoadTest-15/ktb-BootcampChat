@@ -44,11 +44,8 @@ export const useMessageHandling = (
       return;
     }
 
-    // 가장 오래된 메시지의 타임스탬프 찾기
-    const sortedMessages = [...messages].sort(
-      (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
-    );
-    const oldestMessage = sortedMessages[0];
+    // 메시지 상태는 병합 시 시간순을 유지하므로 첫 항목이 가장 오래된 메시지다.
+    const oldestMessage = messages[0];
     const beforeTimestamp = oldestMessage?.timestamp;
 
     if (!beforeTimestamp) {
