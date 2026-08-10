@@ -98,8 +98,14 @@ class MongoMessageBaselineQueryCountIntegrationTest {
 
         Pageable pageable = PageRequest.of(0, BATCH, Sort.by("timestamp").descending());
 
+        // before 경계를 near-future로 둔다: BSON timestamp는 ms 정밀도라 30건이 같은 ms에 몰릴 수 있고,
+        // strict `<` 조회 시 now()와 동률인 건이 제외되면 결과가 30개 미만이 된다. 그러면 Spring Data의
+        // Page count 최적화가 count(aggregate)를 생략해(내용이 페이지를 안 채움) 명령 수가 실행 속도에
+        // 따라 흔들린다. near-future 경계로 30건을 항상 포함시켜 count가 결정적으로 나가게 한다.
+        LocalDateTime before = LocalDateTime.now().plusSeconds(1);
+
         listener.start();
-        messageRepository.findByRoomIdAndTimestampBefore(roomId, LocalDateTime.now(), pageable);
+        messageRepository.findByRoomIdAndTimestampBefore(roomId, before, pageable);
         listener.stop();
 
         // Page의 count는 count 명령이 아니라 aggregate(countDocuments)로 나간다 (실측 확인).
