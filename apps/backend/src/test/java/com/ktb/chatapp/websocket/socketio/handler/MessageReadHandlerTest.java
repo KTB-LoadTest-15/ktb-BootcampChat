@@ -52,7 +52,8 @@ class MessageReadHandlerTest {
                 messageReadStatusService,
                 messageStore,
                 roomRepository,
-                userRepository);
+                userRepository,
+                (key, task, onReject) -> task.run());
     }
 
     @Test

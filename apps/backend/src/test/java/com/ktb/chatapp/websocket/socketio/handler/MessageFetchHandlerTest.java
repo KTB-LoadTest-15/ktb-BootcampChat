@@ -34,7 +34,8 @@ class MessageFetchHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new MessageFetchHandler(roomRepository, messageLoader);
+        handler = new MessageFetchHandler(
+                roomRepository, messageLoader, (key, task, onReject) -> task.run());
     }
 
     @Test

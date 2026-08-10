@@ -60,10 +60,24 @@ public void handleChatMessage(SocketIOClient client, ChatMessageRequest data) {
 - `test/.../handler/ChatMessageHandlerTest.java` — 동기 디스패처 주입(기존 검증 유지) + roomId key 위임 테스트.
 - `test/.../socketio/KeyedSocketDispatcherTest.java` (신규) — 오프로드/순서/거부 검증.
 
-## 5. 남은 여지 (후속 — 웹소켓 개선 흐름 내에서 완성)
+## 5. 후속 진행 상황
 
-이번 커밋은 **가장 뜨거운 `chatMessage` 경로만** 오프로드했다. 인프라(`SocketDispatcher`)가 생겼으므로 나머지는 기계적이다:
+**1차(이 문서 커밋 2c4c288)**: 가장 뜨거운 `chatMessage`만 오프로드.
 
-- **다른 @OnEvent 핸들러 오프로드**: `joinRoom`/`leaveRoom`/`fetchPreviousMessages`/`markMessagesAsRead`/`messageReaction`도 같은 디스패처로. key = roomId(가능하면), 없으면 sessionId. 각 핸들러 테스트에 동기 디스패처 주입 필요.
-- **연결 핸드셰이크 오프로드**: `AuthTokenListenerImpl`의 `onConnect`(재접속 시 방 N개 재입장)는 handshake 스레드에서 도므로 별도 검토(auth 결과는 동기 반환 필요).
-- **부하 실측**: 레인 수/큐 용량 튜닝, event-loop lag·`socketio.worker.queued`·p99를 부하에서 측정해 값 고정.
+**2차(후속 커밋)**: 나머지 @OnEvent 핸들러도 같은 `SocketDispatcher`로 오프로드 완료.
+
+| 핸들러 | 순서 보장 key | 포화 시 통지 |
+|---|---|---|
+| `joinRoom` (`RoomJoinHandler`) | roomId | `joinRoomError` |
+| `leaveRoom` (`RoomLeaveHandler`) | roomId | `error` |
+| `fetchPreviousMessages` (`MessageFetchHandler`) | roomId(없으면 session) | `error`(LOAD_ERROR) |
+| `markMessagesAsRead` (`MessageReadHandler`) | sessionId(roomId는 조회로 유도) | `error` |
+| `messageReaction` (`MessageReactionHandler`) | messageId(없으면 session) | `error` |
+
+- `joinRoom`/`leaveRoom`은 `ConnectionLoginHandler.onConnect`(재접속 재입장)·`onDisconnect`에서도 호출되므로, **연결/해제 핸드셰이크 스레드의 방 N개 처리도 자동으로 오프로드**된다(handshake 응답이 빨라짐).
+- 각 핸들러 단위 테스트는 동기 디스패처(`(k,t,r)->t.run()`) 주입으로 기존 검증을 그대로 유지.
+
+## 6. 남은 여지
+
+- **부하 실측**: 레인 수(`socketio.worker.lanes`)/큐 용량(`socketio.worker.queue-capacity`) 튜닝, event-loop lag·`socketio.worker.queued`·p99를 부하에서 측정해 값 고정.
+- `AuthTokenListenerImpl.getAuthTokenResult` 자체(JWT/세션 검증)는 여전히 handshake 스레드에서 동기다(auth 결과 동기 반환 제약). onConnect의 방 재입장만 오프로드됨.

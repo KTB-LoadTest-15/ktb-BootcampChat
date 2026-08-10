@@ -38,7 +38,8 @@ class MessageReactionHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new MessageReactionHandler(socketIOServer, messageStore);
+        handler = new MessageReactionHandler(
+                socketIOServer, messageStore, (key, task, onReject) -> task.run());
     }
 
     @Test
