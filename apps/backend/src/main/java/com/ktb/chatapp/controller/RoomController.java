@@ -21,10 +21,13 @@ import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -276,20 +279,26 @@ public class RoomController {
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
-        User creator = userRepository.findById(room.getCreator()).orElse(null);
+        Set<String> userIds = new HashSet<>(room.getParticipantIds());
+        userIds.add(room.getCreator());
+        Map<String, User> usersById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+
+        User creator = usersById.get(room.getCreator());
         if (creator == null) {
             throw new RuntimeException("Creator not found for room " + room.getId());
         }
         UserResponse creatorSummary = UserResponse.from(creator);
         List<UserResponse> participantSummaries = room.getParticipantIds()
                 .stream()
-                .map(userRepository::findById).peek(optUser -> {
-                    if (optUser.isEmpty()) {
-                        log.warn("Participant not found: roomId={}, userId={}", room.getId(), optUser);
+                .map(userId -> {
+                    User participant = usersById.get(userId);
+                    if (participant == null) {
+                        log.warn("Participant not found: roomId={}, userId={}", room.getId(), userId);
                     }
+                    return participant;
                 })
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+                .filter(Objects::nonNull)
                 .map(UserResponse::from)
                 .toList();
 
