@@ -11,6 +11,7 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +42,7 @@ public class RoomLeaveHandler {
     private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
+    private final UserBatchLoader userBatchLoader;
     private final UserRooms userRooms;
     private final MessageResponseMapper messageResponseMapper;
     
@@ -114,12 +117,12 @@ public class RoomLeaveHandler {
             return;
         }
         
-        var participantList = roomOpt.get()
-                .getParticipantIds()
-                .stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+        // 참가자 id 목록을 한 번의 조회로 일괄 해소(참가자당 findById N+1 제거).
+        var participantIds = roomOpt.get().getParticipantIds();
+        Map<String, User> participantsById = userBatchLoader.findByIds(participantIds);
+        var participantList = participantIds.stream()
+                .map(participantsById::get)
+                .filter(Objects::nonNull)
                 .map(UserResponse::from)
                 .toList();
         

@@ -10,6 +10,7 @@ import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
+import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
@@ -17,6 +18,7 @@ import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,7 @@ class RoomJoinHandlerTest {
     @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
+    @Mock private UserBatchLoader userBatchLoader;
     @Mock private UserRooms userRooms;
     @Mock private MessageLoader messageLoader;
     @Mock private MessageResponseMapper messageResponseMapper;
@@ -57,6 +60,7 @@ class RoomJoinHandlerTest {
                 messageStore,
                 roomRepository,
                 userRepository,
+                userBatchLoader,
                 userRooms,
                 messageLoader,
                 messageResponseMapper,
@@ -91,6 +95,7 @@ class RoomJoinHandlerTest {
 
         when(client.get("user")).thenReturn(socketUser);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userBatchLoader.findByIds(any())).thenReturn(Map.of("user-1", user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
         when(messageStore.add(any(Message.class))).thenAnswer(invocation -> {

@@ -30,6 +30,7 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 |---|---|---:|---:|---|---|
 | P0-4 | 30개 메시지 읽음 처리 | 60 (find30+update30) | 1 (update) | −98.3%, O(N)→O(1) | [P0-4-read-status-bulk-update.md](P0-4-read-status-bulk-update.md) |
 | P0-5 | 메시지당 세션 touch | 4 (find2+update2) | 2 (find1+update1) | −50%, write 2→1 | [P0-5-duplicate-session-touch.md](P0-5-duplicate-session-touch.md) |
+| P0-4/P1-4 | 발신자·참가자 30명 유저 조회 | 30 (find30) | 1 (find, $in) | −96.7%, O(N)→O(1) | [P0-4-P1-4-user-bulk-load.md](P0-4-P1-4-user-bulk-load.md) |
 
 ## Baseline (전환 전 기준선)
 

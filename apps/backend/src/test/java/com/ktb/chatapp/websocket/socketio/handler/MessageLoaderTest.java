@@ -5,8 +5,8 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import net.datafaker.Faker;
 import org.jetbrains.annotations.NotNull;
@@ -20,7 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,7 +34,7 @@ class MessageLoaderTest {
     private MessageStore messageStore;
 
     @Mock
-    private UserRepository userRepository;
+    private UserBatchLoader userBatchLoader;
 
     @Mock
     private FileRepository fileRepository;
@@ -57,7 +57,7 @@ class MessageLoaderTest {
 
         messageLoader = new MessageLoader(
                 messageStore,
-                userRepository,
+                userBatchLoader,
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
@@ -76,7 +76,7 @@ class MessageLoaderTest {
                 ))
                 .toList();
 
-        lenient().when(userRepository.findById(anyString())).thenReturn(Optional.of(testUser));
+        lenient().when(userBatchLoader.findByIds(anyCollection())).thenReturn(Map.of(userId, testUser));
         lenient().doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
     }
 

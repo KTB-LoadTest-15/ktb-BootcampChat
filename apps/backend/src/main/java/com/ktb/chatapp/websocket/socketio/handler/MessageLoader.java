@@ -5,12 +5,12 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
-import jakarta.annotation.Nullable;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ import static java.util.Collections.emptyList;
 public class MessageLoader {
 
     private final MessageStore messageStore;
-    private final UserRepository userRepository;
+    private final UserBatchLoader userBatchLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
 
@@ -58,10 +58,15 @@ public class MessageLoader {
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
         messageReadStatusService.updateReadStatus(messageIds, userId);
 
+        // sender 유저를 한 번의 조회로 일괄 해소(메시지당 findById N+1 제거).
+        // senderId가 null(AI/시스템 메시지)이거나 존재하지 않으면 맵에 없고, 매퍼가 null sender를 허용한다.
+        var senderIds = sortedMessages.stream().map(Message::getSenderId).toList();
+        Map<String, User> sendersById = userBatchLoader.findByIds(senderIds);
+
         // 메시지 응답 생성
         List<MessageResponse> messageResponses = sortedMessages.stream()
                 .map(message -> {
-                    var user = findUserById(message.getSenderId());
+                    var user = sendersById.get(message.getSenderId());
                     return messageResponseMapper.mapToMessageResponse(message, user);
                 })
                 .collect(Collectors.toList());
@@ -75,17 +80,5 @@ public class MessageLoader {
                 .messages(messageResponses)
                 .hasMore(hasMore)
                 .build();
-    }
-
-    /**
-     * AI 경우 null 반환 가능
-     */
-    @Nullable
-    private User findUserById(String id) {
-        if (id == null) {
-            return null;
-        }
-        return userRepository.findById(id)
-                .orElse(null);
     }
 }

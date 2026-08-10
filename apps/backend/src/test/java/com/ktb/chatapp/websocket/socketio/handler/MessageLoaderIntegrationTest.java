@@ -11,6 +11,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MongoMessageStore;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -67,7 +68,7 @@ class MessageLoaderIntegrationTest {
         // MessageLoader 인스턴스 생성
         messageLoader = new MessageLoader(
                 new MongoMessageStore(messageRepository),
-                userRepository,
+                new UserBatchLoader(userRepository),
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );
