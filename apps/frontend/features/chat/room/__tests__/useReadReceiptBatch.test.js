@@ -1,7 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import socketClient from '@/lib/socket/socketClient';
-import { recordReadReceiptSent } from '@/lib/performance/chatMetrics';
 import { useReadReceiptBatch } from '../useReadReceiptBatch';
 
 vi.mock('@/lib/socket/socketClient', () => ({
@@ -9,10 +8,6 @@ vi.mock('@/lib/socket/socketClient', () => ({
     canSend: vi.fn(() => true),
     markMessagesAsRead: vi.fn(),
   },
-}));
-
-vi.mock('@/lib/performance/chatMetrics', () => ({
-  recordReadReceiptSent: vi.fn(),
 }));
 
 describe('useReadReceiptBatch', () => {
@@ -47,10 +42,6 @@ describe('useReadReceiptBatch', () => {
       'message-1',
       'message-2',
     ]);
-    expect(recordReadReceiptSent).toHaveBeenCalledWith([
-      'message-1',
-      'message-2',
-    ]);
   });
 
   it('does not queue a receipt while the socket cannot send', () => {
@@ -63,7 +54,6 @@ describe('useReadReceiptBatch', () => {
     });
 
     expect(socketClient.markMessagesAsRead).not.toHaveBeenCalled();
-    expect(recordReadReceiptSent).not.toHaveBeenCalled();
   });
 
   it('discards pending receipts when the message list unmounts', () => {

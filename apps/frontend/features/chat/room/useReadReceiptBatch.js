@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import socketClient from '@/lib/socket/socketClient';
-import { recordReadReceiptSent } from '@/lib/performance/chatMetrics';
 
 export const READ_RECEIPT_BATCH_DELAY_MS = 200;
 
@@ -22,7 +21,6 @@ export const useReadReceiptBatch = ({
 
     try {
       socketClient.markMessagesAsRead(messageIds);
-      recordReadReceiptSent(messageIds);
     } catch (error) {
       console.error('Error marking messages as read:', error);
     }

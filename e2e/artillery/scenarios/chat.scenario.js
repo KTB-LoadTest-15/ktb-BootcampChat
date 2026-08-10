@@ -9,15 +9,9 @@ const { bannedWordSafeText } = require('../../utils/bannedWordSafeText');
 const { expect } = require('@playwright/test');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const {
-    collectBrowserMetrics,
-    emitBrowserMetrics,
-    resetBrowserMetrics,
-} = require('../performance/browser-metrics');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const MASS_MESSAGE_COUNT = process.env.MASS_MESSAGE_COUNT || 10;
-const USE_CREATED_CHAT_ROOM = process.env.ARTILLERY_USE_CREATED_ROOM === 'true';
 
 // Action 간 timeout 설정 (환경변수로 조절 가능)
 const ACTION_TIMEOUT = parseInt(process.env.ACTION_TIMEOUT || '1000', 10);
@@ -65,31 +59,15 @@ async function chatRoomCreationScenario(page, vuContext) {
 /**
  * Artillery 메시지 대량 전송 시나리오
  */
-async function massMessageScenario(page, vuContext, events) {
+async function massMessageScenario(page, vuContext) {
     try {
-        // 렌더링 비교 테스트는 VU마다 방을 분리해 다른 사용자의 읽음 이벤트를 배제한다.
-        if (USE_CREATED_CHAT_ROOM && vuContext.vars.chatRoomUrl) {
-            await page.goto(vuContext.vars.chatRoomUrl);
-        } else {
-            await joinRandomChatRoomAction(page);
-        }
+        // 1. 랜덤 채팅방 입장
+        await joinRandomChatRoomAction(page);
         await expect(page).toHaveURL(new RegExp(`${BASE_URL}/chat/\\w+`));
-        await expect(page.getByTestId('chat-message-input')).toBeVisible();
-        await resetBrowserMetrics(page);
 
         // 2. 여러 메시지 연속 전송 (10개)
         console.log(`Sending ${MASS_MESSAGE_COUNT} messages...`);
-        const messages = await sendMultipleMessagesAction(page, MASS_MESSAGE_COUNT);
-        const lastMessage = messages.at(-1);
-
-        if (lastMessage) {
-            await expect(
-                page.getByTestId('message-content').filter({ hasText: lastMessage })
-            ).toBeVisible();
-        }
-
-        const snapshot = await collectBrowserMetrics(page);
-        emitBrowserMetrics(events, snapshot);
+        await sendMultipleMessagesAction(page, MASS_MESSAGE_COUNT);
     } catch (error) {
         console.error('Mass message scenario failed:', error.message);
         throw error;
