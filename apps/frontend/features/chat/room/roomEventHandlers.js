@@ -1,4 +1,11 @@
-import { deriveUniqueSortedMessages } from '../messages/useMessageList';
+import {
+  collectUniqueMessages,
+  mergeSortedMessages,
+} from '../messages/useMessageList';
+import {
+  recordIncomingMessage,
+  recordReadReceiptReceived,
+} from '@/lib/performance/chatMetrics';
 
 export const processLoadedRoomMessages = ({
   loadedMessages,
@@ -13,16 +20,15 @@ export const processLoadedRoomMessages = ({
     throw new Error('Invalid messages format');
   }
 
-  const processedSnapshot = new Set(processedMessageIds.current);
-  processedMessageIds.current = deriveUniqueSortedMessages(
-    [],
-    loadedMessages,
-    processedSnapshot
-  ).processedMessageIds;
+  const {
+    messages: uniqueLoadedMessages,
+    processedMessageIds: nextProcessedMessageIds,
+  } = collectUniqueMessages(loadedMessages, processedMessageIds.current);
+  processedMessageIds.current = nextProcessedMessageIds;
 
   let nextMessages;
   setMessages(prev => {
-    nextMessages = deriveUniqueSortedMessages(prev, loadedMessages, processedSnapshot).messages;
+    nextMessages = mergeSortedMessages(prev, uniqueLoadedMessages);
     return nextMessages;
   });
   setHasMoreMessages(hasMore);
@@ -109,11 +115,13 @@ export const createRoomEventHandlers = ({
     },
     onMessagesRead: (payload) => {
       if (!mountedRef.current) return;
+      recordReadReceiptReceived(payload?.messageIds);
       setMessages(prev => applyReadReceipts(prev, payload));
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
+      recordIncomingMessage(incoming._id);
       processedMessageIds.current.add(incoming._id);
       setMessages(prev => appendIncomingMessage(prev, incoming));
     },

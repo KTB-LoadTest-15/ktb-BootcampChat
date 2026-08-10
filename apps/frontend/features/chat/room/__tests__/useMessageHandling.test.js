@@ -122,4 +122,37 @@ describe('useMessageHandling', () => {
     expect(result.current.filePreview).toBeNull();
     expect(result.current.uploadError).toBeNull();
   });
+
+  it('loads history before the first chronologically sorted message', () => {
+    const roomSocket = { connected: true };
+    const socketRef = { current: roomSocket };
+    const setLoadingMessages = vi.fn();
+    const messages = [
+      { _id: 'oldest', timestamp: '2026-01-01T00:00:01.000Z' },
+      { _id: 'latest', timestamp: '2026-01-01T00:00:02.000Z' },
+    ];
+    const { result } = renderHook(() =>
+      useMessageHandling(
+        currentUser,
+        roomId,
+        vi.fn(),
+        messages,
+        false,
+        setLoadingMessages,
+        socketRef
+      )
+    );
+
+    act(() => result.current.handleLoadMore());
+
+    expect(setLoadingMessages).toHaveBeenCalledWith(true);
+    expect(socketClient.fetchPreviousMessages).toHaveBeenCalledWith(
+      {
+        roomId,
+        before: '2026-01-01T00:00:01.000Z',
+        limit: 30,
+      },
+      roomSocket
+    );
+  });
 });
