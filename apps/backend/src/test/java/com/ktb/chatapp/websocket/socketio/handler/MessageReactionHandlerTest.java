@@ -48,28 +48,59 @@ class MessageReactionHandlerTest {
         handler.handleMessageReaction(client, new MessageReactionRequest("👍", "message-1", "add", "👍"));
 
         verify(client).sendEvent(eq(ERROR), any());
-        verify(messageStore, never()).update(any());
+        verify(messageStore, never()).addReaction(any(), any(), any());
+        verify(messageStore, never()).removeReaction(any(), any(), any());
     }
 
     @Test
     void handleMessageReaction_addsReactionAndBroadcasts() {
         Message message = Message.builder().id("message-1").roomId("room-1").build();
+        message.addReaction("👍", "user-1");
         MessageReactionRequest request =
                 new MessageReactionRequest("👍", "message-1", "add", "👍");
 
         when(client.get("user"))
                 .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
-        when(messageStore.findById("message-1")).thenReturn(Optional.of(message));
-        when(messageStore.update(message)).thenReturn(message);
+        when(messageStore.addReaction("message-1", "👍", "user-1")).thenReturn(Optional.of(message));
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
 
         handler.handleMessageReaction(client, request);
 
-        verify(messageStore).update(message);
+        verify(messageStore).addReaction("message-1", "👍", "user-1");
         ArgumentCaptor<Object> responseCaptor = ArgumentCaptor.forClass(Object.class);
         verify(roomOperations).sendEvent(eq(MESSAGE_REACTION_UPDATE), responseCaptor.capture());
         MessageReactionResponse response = (MessageReactionResponse) responseCaptor.getValue();
         assertEquals("message-1", response.getMessageId());
         assertEquals(Set.of("user-1"), response.getReactions().get("👍"));
+    }
+
+    @Test
+    void handleMessageReaction_messageNotFound_sendsError() {
+        MessageReactionRequest request =
+                new MessageReactionRequest("👍", "missing", "add", "👍");
+
+        when(client.get("user"))
+                .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
+        when(messageStore.addReaction("missing", "👍", "user-1")).thenReturn(Optional.empty());
+
+        handler.handleMessageReaction(client, request);
+
+        verify(client).sendEvent(eq(ERROR), any());
+        verify(socketIOServer, never()).getRoomOperations(any());
+    }
+
+    @Test
+    void handleMessageReaction_unsupportedType_sendsErrorWithoutStoreCall() {
+        MessageReactionRequest request =
+                new MessageReactionRequest("👍", "message-1", "toggle", "👍");
+
+        when(client.get("user"))
+                .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
+
+        handler.handleMessageReaction(client, request);
+
+        verify(client).sendEvent(eq(ERROR), any());
+        verify(messageStore, never()).addReaction(any(), any(), any());
+        verify(messageStore, never()).removeReaction(any(), any(), any());
     }
 }

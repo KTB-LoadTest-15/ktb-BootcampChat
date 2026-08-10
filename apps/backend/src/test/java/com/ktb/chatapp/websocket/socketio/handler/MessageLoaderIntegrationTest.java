@@ -49,6 +49,9 @@ class MessageLoaderIntegrationTest {
     @Autowired
     private FileRepository fileRepository;
 
+    @Autowired
+    private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
+
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
@@ -67,7 +70,7 @@ class MessageLoaderIntegrationTest {
 
         // MessageLoader 인스턴스 생성
         messageLoader = new MessageLoader(
-                new MongoMessageStore(messageRepository),
+                new MongoMessageStore(messageRepository, mongoTemplate),
                 new UserBatchLoader(userRepository),
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService

@@ -19,8 +19,22 @@ public interface MessageStore {
     /** 신규 메시지를 추가한다. id가 없으면 부여하고, timestamp가 없으면 현재 시각을 넣는다. */
     Message add(Message message);
 
-    /** 기존 메시지를 갱신한다(리액션 등 read-modify-write 경로). */
+    /** 기존 메시지를 갱신한다(read-modify-write 경로). */
     Message update(Message message);
+
+    /**
+     * 메시지에 리액션을 추가한다. 이미 같은 (emoji, userId)면 no-op(멱등).
+     *
+     * <p>Mongo 구현은 단일 원자 연산으로 처리해 동시 리액션에도 lost update가 없다.
+     * @return 갱신된 메시지(존재하지 않으면 empty)
+     */
+    Optional<Message> addReaction(String messageId, String reaction, String userId);
+
+    /**
+     * 메시지에서 리액션을 제거한다. 해당 emoji의 마지막 사용자면 emoji 키 자체를 제거한다.
+     * @return 갱신된 메시지(존재하지 않으면 empty)
+     */
+    Optional<Message> removeReaction(String messageId, String reaction, String userId);
 
     Optional<Message> findById(String id);
 

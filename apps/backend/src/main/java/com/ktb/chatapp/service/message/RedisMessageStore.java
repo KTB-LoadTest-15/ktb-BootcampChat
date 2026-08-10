@@ -98,6 +98,31 @@ public class RedisMessageStore implements MessageStore {
         return message;
     }
 
+    /**
+     * 리액션 추가(best-effort read-modify-write).
+     *
+     * <p>Redis 모드는 로드테스트용으로 throughput을 우선하며 정합성 완화를 수용한다(프로젝트 방침).
+     * 메시지가 Hash field 하나에 JSON 통짜로 저장돼 원자적 부분 갱신이 어렵기 때문에, 여기서는
+     * 도메인 메서드로 in-memory 갱신 후 통째로 다시 쓴다. 같은 메시지에 대한 동시 리액션은
+     * lost update가 가능하다(저빈도라 영향 작음). 강한 정합성은 Mongo 모드에서 보장한다.
+     */
+    @Override
+    public Optional<Message> addReaction(String messageId, String reaction, String userId) {
+        return findById(messageId).map(message -> {
+            message.addReaction(reaction, userId);
+            return update(message);
+        });
+    }
+
+    /** 리액션 제거(best-effort read-modify-write). {@link #addReaction}의 정합성 주석 참고. */
+    @Override
+    public Optional<Message> removeReaction(String messageId, String reaction, String userId) {
+        return findById(messageId).map(message -> {
+            message.removeReaction(reaction, userId);
+            return update(message);
+        });
+    }
+
     @Override
     public Optional<Message> findById(String id) {
         String json = hashOps.get(KEY_MESSAGES, id);
