@@ -95,4 +95,21 @@ public class SocketIOConfig {
     public ChatDataStore chatDataStore() {
         return new LocalChatDataStore();
     }
+
+    /**
+     * 중복 로그인 유예 종료 예약용 공유 스케줄러.
+     *
+     * <p>접속마다 {@code new Thread(){sleep}}를 만들던 것을 대체한다(로그인 폭주 시 스레드 폭발/네이티브
+     * 메모리 고갈 방지, P1-7). 예약 작업은 유예 후 session_ended 1건을 보내는 가벼운 작업이라 단일
+     * 데몬 스레드로 충분하다.
+     */
+    @Bean(destroyMethod = "shutdownNow")
+    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
+    public java.util.concurrent.ScheduledExecutorService duplicateLoginScheduler() {
+        return java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "dup-login-grace");
+            t.setDaemon(true);
+            return t;
+        });
+    }
 }
