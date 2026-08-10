@@ -10,7 +10,7 @@ import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.RateLimitCheckResult;
@@ -44,7 +44,7 @@ import static org.mockito.Mockito.*;
 class ChatMessageHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private FileRepository fileRepository;
@@ -62,7 +62,7 @@ class ChatMessageHandlerTest {
         handler =
                 new ChatMessageHandler(
                         socketIOServer,
-                        messageRepository,
+                        messageStore,
                         roomRepository,
                         userRepository,
                         fileRepository,
@@ -112,7 +112,7 @@ class ChatMessageHandlerTest {
         verify(client).sendEvent(eq(ERROR), payloadCaptor.capture());
         Map<String, String> payload = payloadCaptor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("MESSAGE_REJECTED", payload.get("code"));
-        verifyNoInteractions(messageRepository);
+        verifyNoInteractions(messageStore);
         verify(socketIOServer, never()).getRoomOperations(any());
     }
 
@@ -139,7 +139,7 @@ class ChatMessageHandlerTest {
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageStore.add(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.of(2026, 7, 7, 9, 0));

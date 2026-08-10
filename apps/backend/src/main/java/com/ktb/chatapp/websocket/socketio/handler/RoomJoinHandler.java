@@ -10,9 +10,11 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.UserBatchLoader;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -35,9 +37,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 public class RoomJoinHandler {
 
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
+    private final UserBatchLoader userBatchLoader;
     private final UserRooms userRooms;
     private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
@@ -89,7 +92,7 @@ public class RoomJoinHandler {
                 .metadata(new HashMap<>())
                 .build();
 
-            joinMessage = messageRepository.save(joinMessage);
+            joinMessage = messageStore.add(joinMessage);
 
             // 초기 메시지 로드
             FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
@@ -102,12 +105,12 @@ public class RoomJoinHandler {
                 return;
             }
 
-            // 참가자 정보 조회
-            List<UserResponse> participants = roomOpt.get().getParticipantIds()
-                    .stream()
-                    .map(userRepository::findById)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
+            // 참가자 정보 조회 — id 목록을 한 번의 조회로 일괄 해소(참가자당 findById N+1 제거).
+            var participantIds = roomOpt.get().getParticipantIds();
+            Map<String, User> participantsById = userBatchLoader.findByIds(participantIds);
+            List<UserResponse> participants = participantIds.stream()
+                    .map(participantsById::get)
+                    .filter(Objects::nonNull)
                     .map(UserResponse::from)
                     .toList();
             

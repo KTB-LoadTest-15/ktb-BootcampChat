@@ -11,6 +11,8 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.UserBatchLoader;
+import com.ktb.chatapp.service.message.MongoMessageStore;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -47,6 +49,9 @@ class MessageLoaderIntegrationTest {
     @Autowired
     private FileRepository fileRepository;
 
+    @Autowired
+    private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
+
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
@@ -65,8 +70,8 @@ class MessageLoaderIntegrationTest {
 
         // MessageLoader 인스턴스 생성
         messageLoader = new MessageLoader(
-                messageRepository,
-                userRepository,
+                new MongoMessageStore(messageRepository, mongoTemplate),
+                new UserBatchLoader(userRepository),
                 new MessageResponseMapper(fileRepository),
                 messageReadStatusService
         );

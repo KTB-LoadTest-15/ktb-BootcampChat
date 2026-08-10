@@ -1,6 +1,6 @@
 package com.ktb.chatapp.service;
 
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -15,10 +15,10 @@ public class RecentMessageCounter {
 
     static final Duration RECENT_WINDOW = Duration.ofMinutes(30);
 
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
 
     public int countRecentMessages(String roomId) {
         LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
-        return (int) messageRepository.countRecentMessagesByRoomId(roomId, since);
+        return (int) messageStore.countRecentMessages(roomId, since);
     }
 }

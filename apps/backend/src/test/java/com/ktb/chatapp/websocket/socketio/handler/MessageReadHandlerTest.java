@@ -8,7 +8,7 @@ import com.ktb.chatapp.dto.MessagesReadResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
@@ -37,7 +37,7 @@ class MessageReadHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
     @Mock private MessageReadStatusService messageReadStatusService;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private SocketIOClient client;
@@ -50,7 +50,7 @@ class MessageReadHandlerTest {
         handler = new MessageReadHandler(
                 socketIOServer,
                 messageReadStatusService,
-                messageRepository,
+                messageStore,
                 roomRepository,
                 userRepository);
     }
@@ -75,7 +75,7 @@ class MessageReadHandlerTest {
 
         when(client.get("user"))
                 .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
-        when(messageRepository.findById("message-1")).thenReturn(Optional.of(message));
+        when(messageStore.findById("message-1")).thenReturn(Optional.of(message));
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
