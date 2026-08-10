@@ -8,6 +8,7 @@ const {
 const {
     fullProfileUpdateScenario,
 } = require('./scenarios/profile.scenario.js');
+const { installBrowserMetrics } = require('./performance/browser-metrics.js');
 
 function generateUserSchema() {
     const timestamp = Date.now();
@@ -50,16 +51,30 @@ const allScenariosFlat = [
  * 부하테스트 리포트에서 어느 시나리오가 실패했는지 구분할 수 없었다. 실제
  * 에러 타입/스택/재시도 동작은 그대로 두고 메시지 텍스트만 태그를 붙인다.
  */
-async function allScenarios(page, vuContext) {
+async function allScenarios(page, vuContext, events, test) {
     const testUser = generateUserSchema();
     vuContext.vars.testUser = testUser;
+    await installBrowserMetrics(page);
 
     for (const scenario of allScenariosFlat) {
+        const startedAt = Date.now();
         try {
-            await scenario(page, vuContext);
+            const runScenario = () => scenario(page, vuContext, events, test);
+
+            if (test?.step) {
+                await test.step(scenario.name, runScenario);
+            } else {
+                await runScenario();
+            }
         } catch (err) {
             err.message = `[${scenario.name}] ${err.message}`;
             throw err;
+        } finally {
+            events?.emit(
+                'histogram',
+                `scenario.duration.${scenario.name}_ms`,
+                Date.now() - startedAt
+            );
         }
     }
 }

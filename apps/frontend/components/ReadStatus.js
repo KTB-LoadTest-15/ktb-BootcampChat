@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react'
 import { ConfirmOutlineIcon } from '@vapor-ui/icons';
 import { Text, HStack } from '@vapor-ui/core';
 import socketClient from '@/lib/socket/socketClient';
+import { recordReadReceiptSent } from '@/lib/performance/chatMetrics';
 
 const ReadStatus = ({ 
   messageType = 'text',
@@ -46,6 +47,7 @@ const ReadStatus = ({
     try {
       // Socket.IO를 통해 서버에 읽음 상태 전송
       socketClient.markMessagesAsRead([messageId]);
+      recordReadReceiptSent([messageId]);
 
       setHasMarkedAsRead(true);
 

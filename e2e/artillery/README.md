@@ -122,6 +122,26 @@
   - profile.scenario.js - 프로필 부하 테스트
     - fullProfileUpdateScenario: 프로필 이름 및 이미지 업데이트
 
+  ### 프론트엔드 성능 측정 지표
+
+  `massMessageScenario`는 테스트 브라우저에서만 계측을 활성화하고 다음 값을
+  Artillery 결과에 함께 기록합니다. 일반 브라우저에서는 계측 객체가 없으므로
+  프론트엔드 계측 함수가 아무 동작도 하지 않습니다.
+
+  - `chat.message_to_dom_ms`: Socket 메시지 수신부터 다음 animation frame의 DOM 표시까지 지연
+  - `chat.read.sent_events`, `chat.read.received_events`: 읽음 이벤트 송수신 횟수
+  - `chat.read.sent_message_ids`, `chat.read.received_message_ids`: 읽음 처리 메시지 수
+  - `browser.long_tasks.count`, `browser.long_tasks.total_ms`: Long Task 횟수와 누적 시간
+  - `browser.dom.nodes`, `chat.dom.message_nodes`: 전체 DOM 및 메시지 DOM 노드 수
+  - `browser.heap.used_mb`: 메시지 전송 시나리오 종료 시 Chromium JS heap
+  - `chat.user_message.renders`, `chat.user_message.rerenders`: `UserMessage` 렌더와 재렌더 횟수
+  - `scenario.duration.<scenario>_ms`: 개별 기능 시나리오 실행 시간
+
+  VU 성공/실패와 전체 실행 시간은 Artillery 기본 지표인 `vusers.completed`,
+  `vusers.failed`, `vusers.session_length`를 사용합니다. React 개발 모드에서는
+  Strict Mode가 렌더 횟수에 영향을 줄 수 있으므로 리팩토링 전후 비교는 동일한
+  실행 모드에서 수행하세요.
+
   ### all-scenarios.js
 
   모든 시나리오를 순차적으로 실행하는 통합 파일입니다.
