@@ -284,7 +284,8 @@ public class RoomController {
                 .map(UserResponse::from)
                 .toList();
 
-        boolean isCreator = room.getCreator().equals(name);
+        boolean isCreator = name != null
+                && name.equalsIgnoreCase(creator.getEmail());
 
         int recentMessageCount = recentMessageCounter.countRecentMessages(room.getId());
 

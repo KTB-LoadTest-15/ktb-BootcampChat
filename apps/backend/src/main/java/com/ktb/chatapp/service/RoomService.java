@@ -232,7 +232,9 @@ public class RoomService {
                     .build())
                 .collect(Collectors.toList()))
             .createdAtDateTime(room.getCreatedAt())
-            .isCreator(creator != null && creator.getId().equals(name))
+            .isCreator(creator != null
+                && name != null
+                && name.equalsIgnoreCase(creator.getEmail()))
             .recentMessageCount(recentMessageCount)
             .build();
     }

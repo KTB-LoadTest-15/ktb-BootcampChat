@@ -234,6 +234,12 @@ BASE_URL=http://localhost:3000 PHASE1_DURATION=5 PHASE1_ARRIVAL_COUNT=1 make art
 - API URL, 응답 구조, 최신 방 우선 순서는 유지한다.
 - pagination은 응답 계약 검토가 필요한 별도 변경으로 남긴다.
 
+## D4-3 생성자 여부 응답 수정
+
+- JWT/Principal의 로그인 식별자는 이메일이므로 생성자 MongoDB ID와 비교하던 코드를 생성자 이메일 비교로 통일했다.
+- 누락되던 `isCreator` JSON 필드를 명시적으로 노출한다.
+- API URL과 기존 응답 필드는 변경하지 않는다.
+
 ## 기존 시나리오로 측정할 항목
 
 별도 테스트를 만들지 않고 현재 부하테스트 시나리오에서 다음 값만 추가로 기록한다.
