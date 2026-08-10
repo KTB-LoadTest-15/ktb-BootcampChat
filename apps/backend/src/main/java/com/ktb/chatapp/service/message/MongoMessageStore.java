@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Component;
  * 페이지 조회는 {@code find} + {@code aggregate}(count). (docs/perf/P0-redis-baseline.md)
  */
 @Component
+@ConditionalOnProperty(name = "message.store", havingValue = "mongo", matchIfMissing = true)
 @RequiredArgsConstructor
 public class MongoMessageStore implements MessageStore {
 
