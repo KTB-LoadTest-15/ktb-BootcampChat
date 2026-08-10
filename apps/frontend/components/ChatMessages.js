@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo } from 'react';
 import { Spinner, Text, VStack } from '@vapor-ui/core';
 import SystemMessage from './SystemMessage';
 import FileMessage from './FileMessage';
 import UserMessage from './UserMessage';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { useVirtualMessageList } from '../hooks/useVirtualMessageList';
 import { useReadReceiptBatch } from '../features/chat/room/useReadReceiptBatch';
 
 const LoadingIndicator = React.memo(() => (
@@ -30,6 +31,34 @@ const EmptyMessages = React.memo(() => (
 ));
 EmptyMessages.displayName = 'EmptyMessages';
 
+const VirtualMessageRow = React.memo(({
+  children,
+  index,
+  itemKey,
+  start,
+  totalCount,
+}) => {
+  return (
+    <div
+      data-virtual-message-index={index}
+      data-virtual-message-key={itemKey}
+      aria-posinset={index + 1}
+      aria-setsize={totalCount}
+      style={{
+        display: 'flow-root',
+        left: 0,
+        position: 'absolute',
+        top: 0,
+        transform: `translateY(${start}px)`,
+        width: '100%',
+      }}
+    >
+      {children}
+    </div>
+  );
+});
+VirtualMessageRow.displayName = 'VirtualMessageRow';
+
 const ChatMessages = ({
   messages = [],
   currentUser = null,
@@ -40,6 +69,8 @@ const ChatMessages = ({
   onReactionRemove = () => {},
   onLoadMore = () => {}
 }) => {
+  const currentUserId = currentUser?.id;
+
   // 무한 스크롤 훅
   const { sentinelRef } = useInfiniteScroll(
     onLoadMore,
@@ -50,21 +81,21 @@ const ChatMessages = ({
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
   const { containerRef, scrollToBottom, isNearBottom } = useAutoScroll(
     messages,
-    currentUser?.id,
+    currentUserId,
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
   );
   const queueReadReceipt = useReadReceiptBatch();
 
   const isMine = useCallback((msg) => {
-    if (!msg?.sender || !currentUser?.id) return false;
+    if (!msg?.sender || !currentUserId) return false;
     
     return (
-      msg.sender._id === currentUser.id || 
-      msg.sender.id === currentUser.id ||
-      msg.sender === currentUser.id
+      msg.sender._id === currentUserId ||
+      msg.sender.id === currentUserId ||
+      msg.sender === currentUserId
     );
-  }, [currentUser?.id]);
+  }, [currentUserId]);
 
   const allMessages = useMemo(() => {
     if (!Array.isArray(messages)) return [];
@@ -75,7 +106,49 @@ const ChatMessages = ({
     });
   }, [messages]);
 
-  const renderMessage = useCallback((msg, idx) => {
+  const getMessageKey = useCallback(
+    (message, index) => message?._id || message?.id || `msg-${index}`,
+    []
+  );
+  const {
+    isVirtualized,
+    listRef,
+    measureItems,
+    totalSize,
+    virtualItems,
+  } = useVirtualMessageList({
+    items: allMessages,
+    containerRef,
+    getItemKey: getMessageKey,
+  });
+
+  useLayoutEffect(() => {
+    if (!isVirtualized || !listRef.current) return;
+
+    const list = listRef.current;
+    const rows = Array.from(list.querySelectorAll('[data-virtual-message-key]'));
+    const measureRows = (elements) => {
+      measureItems(elements.map(element => ({
+        key: element.dataset.virtualMessageKey,
+        size: element.getBoundingClientRect().height,
+      })));
+    };
+    measureRows(rows);
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      measureItems(entries.map(({ target, contentRect }) => ({
+        key: target.dataset.virtualMessageKey,
+        size: contentRect.height,
+      })));
+    });
+    rows.forEach(row => observer.observe(row));
+
+    return () => observer.disconnect();
+  }, [isVirtualized, listRef, measureItems, virtualItems]);
+
+  const renderMessage = useCallback((msg) => {
     if (!msg) return null;
 
     const commonProps = {
@@ -92,13 +165,6 @@ const ChatMessages = ({
     }[msg.type] || UserMessage;
 
     return (
-      <div
-        key={msg._id || `msg-${idx}`}
-        style={{
-          contentVisibility: 'auto',
-          containIntrinsicSize: '1px 96px',
-        }}
-      >
       <MessageComponent
         {...commonProps}
         msg={msg}
@@ -106,9 +172,47 @@ const ChatMessages = ({
         isMine={msg.type !== 'system' ? isMine(msg) : undefined}
         isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
       />
-      </div>
     );
   }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, queueReadReceipt]);
+
+  const renderedMessages = isVirtualized ? (
+    <div
+      ref={listRef}
+      data-testid="virtual-message-list"
+      data-total-message-count={allMessages.length}
+      style={{
+        flexShrink: 0,
+        height: `${totalSize}px`,
+        minHeight: `${totalSize}px`,
+        position: 'relative',
+        width: '100%',
+      }}
+    >
+      {virtualItems.map(({ index, item, key, start }) => (
+        <VirtualMessageRow
+          key={key}
+          index={index}
+          itemKey={key}
+          start={start}
+          totalCount={allMessages.length}
+        >
+          {renderMessage(item)}
+        </VirtualMessageRow>
+      ))}
+    </div>
+  ) : (
+    allMessages.map((msg, idx) => (
+      <div
+        key={getMessageKey(msg, idx)}
+        style={{
+          contentVisibility: 'auto',
+          containIntrinsicSize: '1px 96px',
+        }}
+      >
+        {renderMessage(msg)}
+      </div>
+    ))
+  );
 
   return (
     <VStack
@@ -146,7 +250,7 @@ const ChatMessages = ({
       {allMessages.length === 0 ? (
         <EmptyMessages />
       ) : (
-        allMessages.map((msg, idx) => renderMessage(msg, idx))
+        renderedMessages
       )}
     </VStack>
   );
