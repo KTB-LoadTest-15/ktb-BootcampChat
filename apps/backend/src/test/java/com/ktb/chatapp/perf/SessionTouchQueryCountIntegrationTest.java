@@ -34,7 +34,10 @@ import org.springframework.test.context.TestPropertySource;
 @Import({MongoTestContainer.class, RedisTestContainer.class, MongoCommandCounterConfig.class})
 @TestPropertySource(properties = {
         "spring.data.mongodb.auto-index-creation=true",
-        "socketio.enabled=false"
+        "socketio.enabled=false",
+        // P0-5는 "검증당 세션 write 1회"의 명령 수를 측정하므로 throttle을 끈다(매 검증 write).
+        // throttle(창 단위 write 절감)은 SessionTouchThrottleQueryCountIntegrationTest에서 측정한다.
+        "session.touch.throttle-ms=0"
 })
 class SessionTouchQueryCountIntegrationTest {
 
