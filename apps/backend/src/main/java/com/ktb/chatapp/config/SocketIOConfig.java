@@ -45,7 +45,9 @@ public class SocketIOConfig {
         
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
-        socketConfig.setTcpNoDelay(false);
+        // 채팅은 소형 프레임이 빈번하다. Nagle(작은 패킷을 모아 보냄)은 이런 워크로드에서
+        // 메시지당 최대 ~수십 ms 지연을 유발하므로 끈다(tcpNoDelay=true).
+        socketConfig.setTcpNoDelay(true);
         socketConfig.setAcceptBackLog(10);
         socketConfig.setTcpSendBufferSize(4096);
         socketConfig.setTcpReceiveBufferSize(4096);

@@ -37,6 +37,7 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 | P0-2 | 세션 활동시각 write (5건 연속) | 10 (find5+update5) | 5 (find5+update0) | update N→창당 1회, event-loop write 제거 | [P0-2-session-write-throttle.md](P0-2-session-write-throttle.md) |
 | P1-7 | 중복 로그인 유예 종료 | 접속마다 raw Thread(10s) | 공유 스케줄러 예약 | 스레드 수 접속비례→상수(정성적) | [P1-7-duplicate-login-scheduler.md](P1-7-duplicate-login-scheduler.md) |
 | D5 | chatMessage 처리 위치 | event-loop 스레드(동기 블로킹) | 키드 워커 오프로드(방 FIFO) | event-loop 점유 제거·순서보장·포화 백프레셔 | [D5-eventloop-offload-chatmessage.md](D5-eventloop-offload-chatmessage.md) |
+| D5 | 소켓 TCP_NODELAY | Nagle on (tcpNoDelay=false) | Nagle off (true) | 소형 빈번 프레임 전송 지연 제거 | [socket-tcp-nodelay.md](socket-tcp-nodelay.md) |
 
 ## Baseline (전환 전 기준선)
 
