@@ -39,6 +39,29 @@ const allScenariosFlat = [
     fullProfileUpdateScenario,
 ];
 
+const scenarioSets = {
+    all: allScenariosFlat,
+    'message-render': [
+        loginScenario,
+        chatRoomCreationScenario,
+        massMessageScenario,
+    ],
+};
+
+function getSelectedScenarios() {
+    const scenarioSet = process.env.ARTILLERY_SCENARIO_SET || 'all';
+    const scenarios = scenarioSets[scenarioSet];
+
+    if (!scenarios) {
+        throw new Error(
+            `Unknown ARTILLERY_SCENARIO_SET: ${scenarioSet}. ` +
+            `Expected one of: ${Object.keys(scenarioSets).join(', ')}`
+        );
+    }
+
+    return scenarios;
+}
+
 
 /**
  * 통합 시나리오 순차 실행
@@ -56,7 +79,7 @@ async function allScenarios(page, vuContext, events, test) {
     vuContext.vars.testUser = testUser;
     await installBrowserMetrics(page);
 
-    for (const scenario of allScenariosFlat) {
+    for (const scenario of getSelectedScenarios()) {
         const startedAt = Date.now();
         try {
             const runScenario = () => scenario(page, vuContext, events, test);

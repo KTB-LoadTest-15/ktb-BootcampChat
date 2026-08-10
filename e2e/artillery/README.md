@@ -142,6 +142,20 @@
   Strict Mode가 렌더 횟수에 영향을 줄 수 있으므로 리팩토링 전후 비교는 동일한
   실행 모드에서 수행하세요.
 
+  메시지 렌더링만 비교할 때는 인증 → 전용 방 생성 → 대량 메시지 전송 흐름만
+  선택할 수 있습니다. 각 VU가 자신이 만든 방을 사용하므로 다른 VU의 읽음 이벤트가
+  결과에 섞이지 않습니다.
+
+  ```bash
+  BASE_URL=http://localhost:3000 \
+  ARTILLERY_SCENARIO_SET=message-render \
+  ARTILLERY_USE_CREATED_ROOM=true \
+  MASS_MESSAGE_COUNT=30 \
+  PHASE1_ARRIVAL_COUNT=1 \
+  PHASE1_DURATION=5 \
+  pnpm run test:artillery
+  ```
+
   ### all-scenarios.js
 
   모든 시나리오를 순차적으로 실행하는 통합 파일입니다.
