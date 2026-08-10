@@ -33,6 +33,7 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 | P0-4/P1-4 | 발신자·참가자 30명 유저 조회 | 30 (find30) | 1 (find, $in) | −96.7%, O(N)→O(1) | [P0-4-P1-4-user-bulk-load.md](P0-4-P1-4-user-bulk-load.md) |
 | P1-3 | 리액션 추가 (Mongo) | 2 (find+update) | 1 (findAndModify) | −50% + 동시성 lost update 제거 | [P1-3-reaction-atomic.md](P1-3-reaction-atomic.md) |
 | P1-5 | 메시지당 방활성도 브로드캐스트 | 동기(event-loop 점유) | @Async 오프로드 | event-loop 점유 제거(정성적) | [P1-5-async-room-activity-broadcast.md](P1-5-async-room-activity-broadcast.md) |
+| P1-1 | 메시지당 레이트리밋 (Mongo) | 2 (find+save) | 1 (findAndModify) | −50% + 동시성 over-admission 제거 | [P1-1-rate-limit-atomic.md](P1-1-rate-limit-atomic.md) |
 
 ## Baseline (전환 전 기준선)
 
