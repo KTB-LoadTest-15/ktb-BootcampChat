@@ -1,9 +1,13 @@
-import React, { useRef } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { VStack, HStack } from '@vapor-ui/core';
 import MessageContent from './MessageContent';
 import MessageActions from './MessageActions';
 import CustomAvatar from './CustomAvatar';
 import ReadStatus from './ReadStatus';
+import {
+  recordMessageDomDisplayed,
+  recordUserMessageRender,
+} from '@/lib/performance/chatMetrics';
 
 const UserMessage = ({
   msg = {}, 
@@ -15,6 +19,16 @@ const UserMessage = ({
 }) => {
   // 메시지 DOM 요소에 대한 ref 생성
   const messageDomRef = useRef(null);
+  recordUserMessageRender(msg._id);
+
+  useLayoutEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      recordMessageDomDisplayed(msg._id);
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [msg._id]);
+
   const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
     month: 'long',

@@ -1,4 +1,8 @@
 import { deriveUniqueSortedMessages } from '../messages/useMessageList';
+import {
+  recordIncomingMessage,
+  recordReadReceiptReceived,
+} from '@/lib/performance/chatMetrics';
 
 export const processLoadedRoomMessages = ({
   loadedMessages,
@@ -109,11 +113,13 @@ export const createRoomEventHandlers = ({
     },
     onMessagesRead: (payload) => {
       if (!mountedRef.current) return;
+      recordReadReceiptReceived(payload?.messageIds);
       setMessages(prev => applyReadReceipts(prev, payload));
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
+      recordIncomingMessage(incoming._id);
       processedMessageIds.current.add(incoming._id);
       setMessages(prev => appendIncomingMessage(prev, incoming));
     },

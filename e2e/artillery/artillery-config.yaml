@@ -7,6 +7,7 @@ config:
   processor: "./all-scenarios.js"
   engines:
     playwright:
+      extendedMetrics: true
       launchOptions:
         headless: true
         slowMo: 100
