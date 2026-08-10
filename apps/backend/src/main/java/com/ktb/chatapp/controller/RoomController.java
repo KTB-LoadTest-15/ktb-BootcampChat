@@ -20,8 +20,10 @@ import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -102,10 +104,17 @@ public class RoomController {
             RoomsResponse response = roomService.getAllRooms(principal.getName());
 
             // 캐시 설정
-            return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)))
-                .header("Last-Modified", java.time.Instant.now().toString())
-                .body(response);
+            ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(Duration.ofSeconds(10)));
+
+            response.getData().stream()
+                .map(RoomResponse::getCreatedAtDateTime)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .ifPresent(lastModified -> responseBuilder.lastModified(
+                    lastModified.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+
+            return responseBuilder.body(response);
 
         } catch (Exception e) {
             log.error("방 목록 조회 에러", e);

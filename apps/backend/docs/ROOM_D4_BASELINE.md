@@ -240,6 +240,12 @@ BASE_URL=http://localhost:3000 PHASE1_DURATION=5 PHASE1_ARRIVAL_COUNT=1 make art
 - 누락되던 `isCreator` JSON 필드를 명시적으로 노출한다.
 - API URL과 기존 응답 필드는 변경하지 않는다.
 
+## D4-4 Last-Modified 헤더 수정
+
+- ISO-8601 문자열을 헤더에 직접 넣어 실제 응답에서 누락되던 문제를 수정한다.
+- 응답에 포함된 방 중 가장 최신 `createdAt`을 사용하고 Spring이 RFC 1123 HTTP 날짜로 직렬화하도록 한다.
+- 빈 방 목록에서는 `Last-Modified`를 생략하며 추가 DB 조회는 발생하지 않는다.
+
 ## 기존 시나리오로 측정할 항목
 
 별도 테스트를 만들지 않고 현재 부하테스트 시나리오에서 다음 값만 추가로 기록한다.
