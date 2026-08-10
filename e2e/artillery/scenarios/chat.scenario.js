@@ -17,6 +17,7 @@ const {
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const MASS_MESSAGE_COUNT = process.env.MASS_MESSAGE_COUNT || 10;
+const USE_CREATED_CHAT_ROOM = process.env.ARTILLERY_USE_CREATED_ROOM === 'true';
 
 // Action 간 timeout 설정 (환경변수로 조절 가능)
 const ACTION_TIMEOUT = parseInt(process.env.ACTION_TIMEOUT || '1000', 10);
@@ -66,8 +67,12 @@ async function chatRoomCreationScenario(page, vuContext) {
  */
 async function massMessageScenario(page, vuContext, events) {
     try {
-        // 1. 랜덤 채팅방 입장
-        await joinRandomChatRoomAction(page);
+        // 렌더링 비교 테스트는 VU마다 방을 분리해 다른 사용자의 읽음 이벤트를 배제한다.
+        if (USE_CREATED_CHAT_ROOM && vuContext.vars.chatRoomUrl) {
+            await page.goto(vuContext.vars.chatRoomUrl);
+        } else {
+            await joinRandomChatRoomAction(page);
+        }
         await expect(page).toHaveURL(new RegExp(`${BASE_URL}/chat/\\w+`));
         await expect(page.getByTestId('chat-message-input')).toBeVisible();
         await resetBrowserMetrics(page);
