@@ -32,6 +32,7 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 | P0-5 | 메시지당 세션 touch | 4 (find2+update2) | 2 (find1+update1) | −50%, write 2→1 | [P0-5-duplicate-session-touch.md](P0-5-duplicate-session-touch.md) |
 | P0-4/P1-4 | 발신자·참가자 30명 유저 조회 | 30 (find30) | 1 (find, $in) | −96.7%, O(N)→O(1) | [P0-4-P1-4-user-bulk-load.md](P0-4-P1-4-user-bulk-load.md) |
 | P1-3 | 리액션 추가 (Mongo) | 2 (find+update) | 1 (findAndModify) | −50% + 동시성 lost update 제거 | [P1-3-reaction-atomic.md](P1-3-reaction-atomic.md) |
+| P1-5 | 메시지당 방활성도 브로드캐스트 | 동기(event-loop 점유) | @Async 오프로드 | event-loop 점유 제거(정성적) | [P1-5-async-room-activity-broadcast.md](P1-5-async-room-activity-broadcast.md) |
 
 ## Baseline (전환 전 기준선)
 
