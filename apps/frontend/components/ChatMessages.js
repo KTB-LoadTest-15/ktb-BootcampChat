@@ -5,6 +5,7 @@ import FileMessage from './FileMessage';
 import UserMessage from './UserMessage';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { useReadReceiptBatch } from '../features/chat/room/useReadReceiptBatch';
 
 const LoadingIndicator = React.memo(() => (
   <div className="loading-messages">
@@ -53,6 +54,8 @@ const ChatMessages = ({
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
   );
+  const queueReadReceipt = useReadReceiptBatch();
+
   const isMine = useCallback((msg) => {
     if (!msg?.sender || !currentUser?.id) return false;
     
@@ -79,7 +82,8 @@ const ChatMessages = ({
       currentUser,
       room,
       onReactionAdd,
-      onReactionRemove
+      onReactionRemove,
+      onMessageRead: queueReadReceipt,
     };
 
     const MessageComponent = {
@@ -104,7 +108,7 @@ const ChatMessages = ({
       />
       </div>
     );
-  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove]);
+  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, queueReadReceipt]);
 
   return (
     <VStack
