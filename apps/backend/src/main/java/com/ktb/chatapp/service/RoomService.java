@@ -8,7 +8,6 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -36,15 +35,12 @@ public class RoomService {
     public RoomsResponse getAllRooms(String name) {
 
         try {
-            // 전체 방을 조회해 최신순으로 정렬한다
-            List<Room> rooms = roomRepository.findAll();
+            // MongoDB에서 최신순으로 정렬된 방 목록을 조회한다
+            List<Room> rooms = roomRepository.findAllByOrderByCreatedAtDesc();
             Map<String, User> usersById = loadUsersById(rooms);
 
             List<RoomResponse> roomResponses = rooms.stream()
                 .map(room -> mapToRoomResponse(room, name, usersById))
-                .sorted(Comparator.comparing(
-                    RoomResponse::getCreatedAtDateTime,
-                    Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
 
             PageMetadata metadata = PageMetadata.builder()
