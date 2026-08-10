@@ -9,9 +9,9 @@ import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -37,7 +37,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 public class RoomLeaveHandler {
 
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
@@ -97,7 +97,7 @@ public class RoomLeaveHandler {
             systemMessage.setReaders(new ArrayList<>());
             systemMessage.setMetadata(new HashMap<>());
 
-            Message savedMessage = messageRepository.save(systemMessage);
+            Message savedMessage = messageStore.add(systemMessage);
             MessageResponse response = messageResponseMapper.mapToMessageResponse(savedMessage, null);
 
             socketIOServer.getRoomOperations(roomId)

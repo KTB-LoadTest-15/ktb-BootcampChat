@@ -10,7 +10,7 @@ import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 class RoomJoinHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private UserRooms userRooms;
@@ -54,7 +54,7 @@ class RoomJoinHandlerTest {
     void setUp() {
         handler = new RoomJoinHandler(
                 socketIOServer,
-                messageRepository,
+                messageStore,
                 roomRepository,
                 userRepository,
                 userRooms,
@@ -93,7 +93,7 @@ class RoomJoinHandlerTest {
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageStore.add(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.now());

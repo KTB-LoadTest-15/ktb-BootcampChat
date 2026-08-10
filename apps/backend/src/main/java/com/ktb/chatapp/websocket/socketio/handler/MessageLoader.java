@@ -5,19 +5,15 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.message.MessageStore;
 import jakarta.annotation.Nullable;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import static java.util.Collections.emptyList;
@@ -27,7 +23,7 @@ import static java.util.Collections.emptyList;
 @RequiredArgsConstructor
 public class MessageLoader {
 
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final UserRepository userRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
@@ -54,19 +50,14 @@ public class MessageLoader {
             int limit,
             LocalDateTime before,
             String userId) {
-        Pageable pageable = PageRequest.of(0, limit, Sort.by("timestamp").descending());
-
-        Page<Message> messagePage = messageRepository
-                .findByRoomIdAndTimestampBefore(roomId, before, pageable);
-
-        List<Message> messages = messagePage.getContent();
+        MessageStore.MessagePage messagePage = messageStore.findMessagesBefore(roomId, before, limit);
 
         // DESC로 조회했으므로 ASC로 재정렬 (채팅 UI 표시 순서)
-        List<Message> sortedMessages = messages.reversed();
-        
+        List<Message> sortedMessages = messagePage.messages().reversed();
+
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
         messageReadStatusService.updateReadStatus(messageIds, userId);
-        
+
         // 메시지 응답 생성
         List<MessageResponse> messageResponses = sortedMessages.stream()
                 .map(message -> {
@@ -75,7 +66,7 @@ public class MessageLoader {
                 })
                 .collect(Collectors.toList());
 
-        boolean hasMore = messagePage.hasNext();
+        boolean hasMore = messagePage.hasMore();
 
         log.debug("Messages loaded - roomId: {}, limit: {}, count: {}, hasMore: {}",
                 roomId, limit, messageResponses.size(), hasMore);

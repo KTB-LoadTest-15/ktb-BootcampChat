@@ -1,6 +1,6 @@
 package com.ktb.chatapp.service;
 
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MessageReadStatusService {
 
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
 
     /**
      * 메시지 읽음 상태 업데이트
@@ -33,7 +33,7 @@ public class MessageReadStatusService {
         }
 
         try {
-            long updated = messageRepository.updateReadersForMessages(
+            long updated = messageStore.addReaderToMessages(
                     messageIds, userId, LocalDateTime.now());
             log.debug("Read status updated: {} of {} messages newly marked as read by user {}",
                     updated, messageIds.size(), userId);

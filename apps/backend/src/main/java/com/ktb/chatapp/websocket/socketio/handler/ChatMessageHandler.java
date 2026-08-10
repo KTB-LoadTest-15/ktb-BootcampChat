@@ -10,9 +10,9 @@ import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.*;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
 import com.ktb.chatapp.service.RoomActivityNotifier;
@@ -40,7 +40,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class ChatMessageHandler {
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
@@ -161,7 +161,7 @@ public class ChatMessageHandler {
                 return;
             }
 
-            Message savedMessage = messageRepository.save(message);
+            Message savedMessage = messageStore.add(message);
             MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
 
             socketIOServer.getRoomOperations(roomId)

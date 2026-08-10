@@ -7,7 +7,7 @@ import com.ktb.chatapp.event.AiMessageStartEvent;
 import com.ktb.chatapp.model.AiType;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.handler.StreamingSession;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,15 +30,15 @@ public class AiService {
 
     private final ChatClient chatClient;
     private final ApplicationEventPublisher eventPublisher;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
 
     public AiService(
             ChatClient.Builder chatClientBuilder,
             ApplicationEventPublisher eventPublisher,
-            MessageRepository messageRepository) {
+            MessageStore messageStore) {
         this.chatClient = chatClientBuilder.build();
         this.eventPublisher = eventPublisher;
-        this.messageRepository = messageRepository;
+        this.messageStore = messageStore;
     }
 
     public void handleAIMentions(String roomId, String userId, MessageContent messageContent) {
@@ -107,7 +107,7 @@ public class AiService {
     public void onAiMessageCompleteEvent(AiMessageCompleteEvent event) {
         try {
             // 메시지 저장
-            Message savedMessage = messageRepository.save(getMessage(event));
+            Message savedMessage = messageStore.add(getMessage(event));
             log.info("AI message saved - messageId: {}, savedId: {}, roomId: {}",
                 event.getMessageId(), savedMessage.getId(), event.getRoomId());
 

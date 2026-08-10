@@ -10,9 +10,9 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -35,7 +35,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 public class RoomJoinHandler {
 
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
@@ -89,7 +89,7 @@ public class RoomJoinHandler {
                 .metadata(new HashMap<>())
                 .build();
 
-            joinMessage = messageRepository.save(joinMessage);
+            joinMessage = messageStore.add(joinMessage);
 
             // 초기 메시지 로드
             FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);

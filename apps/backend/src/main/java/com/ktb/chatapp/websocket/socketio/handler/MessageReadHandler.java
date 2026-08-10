@@ -8,10 +8,10 @@ import com.ktb.chatapp.dto.MessagesReadResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +33,7 @@ public class MessageReadHandler {
     
     private final SocketIOServer socketIOServer;
     private final MessageReadStatusService messageReadStatusService;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     
@@ -50,7 +50,7 @@ public class MessageReadHandler {
                 return;
             }
             
-            String roomId = messageRepository.findById(data.getMessageIds().getFirst())
+            String roomId = messageStore.findById(data.getMessageIds().getFirst())
                     .map(Message::getRoomId).orElse(null);
             
             if (roomId == null || roomId.isBlank()) {
