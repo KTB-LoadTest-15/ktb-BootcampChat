@@ -79,8 +79,7 @@ async function allScenarios(page, vuContext, events, test) {
     vuContext.vars.testUser = testUser;
     await installBrowserMetrics(page);
 
-    for (const scenario of getSelectedScenarios()) {
-        const startedAt = Date.now();
+    for (const scenario of allScenariosFlat) {
         try {
             const runScenario = () => scenario(page, vuContext, events, test);
 
