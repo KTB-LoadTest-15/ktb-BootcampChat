@@ -3,13 +3,17 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ChatMessages from '../ChatMessages';
 
+const { messageContainerRef } = vi.hoisted(() => ({
+  messageContainerRef: { current: null },
+}));
+
 vi.mock('../../hooks/useInfiniteScroll', () => ({
   useInfiniteScroll: () => ({ sentinelRef: { current: null } }),
 }));
 
 vi.mock('../../hooks/useAutoScroll', () => ({
   useAutoScroll: () => ({
-    containerRef: { current: null },
+    containerRef: messageContainerRef,
     scrollToBottom: vi.fn(),
     isNearBottom: true,
   }),
@@ -86,5 +90,31 @@ describe('ChatMessages', () => {
       containIntrinsicSize: '1px 96px',
     });
     expect(screen.getByText('이전 메시지를 불러오는 중...')).toBeInTheDocument();
+  });
+
+  it('renders only a window when the message count exceeds the threshold', () => {
+    const messages = Array.from({ length: 300 }, (_, index) => ({
+      _id: `message-${index}`,
+      content: `message ${index}`,
+      timestamp: new Date(1700000000000 + index * 1000).toISOString(),
+      sender: { _id: 'other' },
+    }));
+
+    render(
+      React.createElement(ChatMessages, {
+        messages,
+        currentUser: { id: 'me' },
+        hasMoreMessages: false,
+      })
+    );
+
+    const virtualList = screen.getByTestId('virtual-message-list');
+    expect(virtualList).toHaveAttribute(
+      'data-total-message-count',
+      '300'
+    );
+    expect(virtualList).toHaveStyle({ flexShrink: 0 });
+    expect(screen.getAllByTestId('message').length).toBeLessThan(300);
+    expect(document.querySelectorAll('[data-virtual-message-index]').length).toBeLessThan(30);
   });
 });
