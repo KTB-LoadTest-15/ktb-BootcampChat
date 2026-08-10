@@ -1,9 +1,5 @@
 package com.ktb.chatapp.service.message;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.model.Message;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -17,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Component;
@@ -40,17 +37,18 @@ public class RedisMessageStore implements MessageStore {
 
     static final String KEY_MESSAGES = "chat:messages";
     static final String KEY_FILE_INDEX = "chat:fileIndex";
+    static final String KEY_FLUSH_PENDING = "chat:flushPending";
 
     private final HashOperations<String, String, String> hashOps;
     private final ZSetOperations<String, String> zSetOps;
-    // 이 앱 컨텍스트에는 ObjectMapper 빈이 없어 내부에서 구성한다(LocalDateTime 지원).
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private final SetOperations<String, String> setOps;
+    private final MessageCodec codec;
 
-    public RedisMessageStore(StringRedisTemplate redisTemplate) {
+    public RedisMessageStore(StringRedisTemplate redisTemplate, MessageCodec codec) {
         this.hashOps = redisTemplate.opsForHash();
         this.zSetOps = redisTemplate.opsForZSet();
+        this.setOps = redisTemplate.opsForSet();
+        this.codec = codec;
     }
 
     private static String roomIndexKey(String roomId) {
@@ -62,19 +60,16 @@ public class RedisMessageStore implements MessageStore {
     }
 
     private String serialize(Message message) {
-        try {
-            return objectMapper.writeValueAsString(message);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("메시지 직렬화 실패: " + message.getId(), e);
-        }
+        return codec.serialize(message);
     }
 
     private Message deserialize(String json) {
-        try {
-            return objectMapper.readValue(json, Message.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("메시지 역직렬화 실패", e);
-        }
+        return codec.deserialize(json);
+    }
+
+    /** 배치 flusher가 Mongo로 영속화하도록 변경된 메시지 id를 대기 큐에 넣는다. */
+    private void markPending(String messageId) {
+        setOps.add(KEY_FLUSH_PENDING, messageId);
     }
 
     @Override
@@ -91,6 +86,7 @@ public class RedisMessageStore implements MessageStore {
         if (message.getFileId() != null) {
             hashOps.put(KEY_FILE_INDEX, message.getFileId(), message.getId());
         }
+        markPending(message.getId());
         return message;
     }
 
@@ -98,6 +94,7 @@ public class RedisMessageStore implements MessageStore {
     public Message update(Message message) {
         // 본문만 갱신(리액션 등). 순서/방은 불변이라 인덱스는 그대로 둔다.
         hashOps.put(KEY_MESSAGES, message.getId(), serialize(message));
+        markPending(message.getId());
         return message;
     }
 
