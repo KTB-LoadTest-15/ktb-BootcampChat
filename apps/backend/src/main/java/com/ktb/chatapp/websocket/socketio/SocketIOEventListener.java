@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
@@ -36,6 +37,7 @@ public class SocketIOEventListener {
     }
 
     @EventListener
+    @Async("socketBroadcastExecutor")
     public void handleRoomCreatedEvent(RoomCreatedEvent event) {
         try {
             socketIOServer.getRoomOperations(ROOM_LIST).sendEvent(ROOM_CREATED, event.getRoomResponse());
