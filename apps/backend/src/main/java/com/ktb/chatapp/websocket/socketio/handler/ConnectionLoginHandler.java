@@ -10,7 +10,6 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -82,7 +81,9 @@ public class ConnectionLoginHandler {
             log.info("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
                     getUserName(client), userId, connectedUsers.size());
 
-            client.joinRooms(Set.of("user:" + userId, "room-list"));
+            // socket:{socketId} 룸에도 조인 → 다른 노드에서 이 특정 소켓만 타깃해 전송할 수 있다
+            // (중복 로그인 시 기존 소켓 종료 통보를 RedissonStoreFactory로 크로스노드 전달).
+            client.joinRooms(Set.of("user:" + userId, "room-list", "socket:" + client.getSessionId()));
             
         } catch (Exception e) {
             log.error("Error handling Socket.IO connection", e);
@@ -115,7 +116,7 @@ public class ConnectionLoginHandler {
                 log.warn("Socket.IO disconnect: User {} has a different active connection. Skipping cleanup.", userId);
             }
 
-            client.leaveRooms(Set.of("user:" + userId, "room-list"));
+            client.leaveRooms(Set.of("user:" + userId, "room-list", "socket:" + socketId));
             client.del("user");
             client.disconnect();
 
@@ -145,8 +146,17 @@ public class ConnectionLoginHandler {
     }
     
     /**
-     * TODO 멀티 클러스터에서 동작 안함
-     * socketIOServer.getRoomOperations("user:" + userId) 로 처리 변경.
+     * 중복 로그인 시 기존 소켓에 종료를 통보한다.
+     *
+     * <p>기존 소켓이 다른 노드에 있을 수 있으므로 {@code getClient(socketId)}(로컬 레지스트리 전용)
+     * 대신 {@code socket:{socketId}} 룸으로 전송한다. {@code socketio.store=redisson}이면
+     * RedissonStoreFactory가 이 룸 브로드캐스트를 해당 소켓이 있는 노드까지 fan-out 한다(②).
+     * 새 클라이언트는 자신의 {@code socket:{자기id}}에만 조인하므로, 지연 SESSION_ENDED가 새(정상)
+     * 세션을 오폭하지 않는다.
+     *
+     * <p>기존 세션을 노드 간에 찾으려면 {@code ConnectedUsers}가 공유돼야 한다(③,
+     * {@code socketio.store=redisson} 시 RedisChatDataStore). memory 모드에서는 단일노드 내에서만
+     * 동작하며 기존과 동치다.
      */
     private void notifyDuplicateLogin(SocketIOClient client, String userId) {
         var socketUser = connectedUsers.get(userId);
@@ -154,23 +164,25 @@ public class ConnectionLoginHandler {
             return;
         }
         String existingSocketId = socketUser.socketId();
-        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
-        if (existingClient == null) {
-            return;
-        }
-        
-        // Send duplicate login notification
-        existingClient.sendEvent(DUPLICATE_LOGIN, Map.of(
+        String targetRoom = "socket:" + existingSocketId;
+
+        // payload 값에 null이 섞이면 Map.of가 NPE를 던지므로 기본값으로 보정한다.
+        // (웹소켓 전송 클라이언트는 User-Agent 헤더가 없을 수 있다.)
+        String userAgent = client.getHandshakeData().getHttpHeaders().get("User-Agent");
+        var remoteAddress = client.getRemoteAddress();
+
+        // Send duplicate login notification (해당 소켓이 있는 노드로 전달됨)
+        socketIOServer.getRoomOperations(targetRoom).sendEvent(DUPLICATE_LOGIN, Map.of(
                 "type", "new_login_attempt",
-                "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
-                "ipAddress", client.getRemoteAddress().toString(),
+                "deviceInfo", userAgent != null ? userAgent : "unknown",
+                "ipAddress", remoteAddress != null ? remoteAddress.toString() : "unknown",
                 "timestamp", System.currentTimeMillis()
         ));
-        
+
         // 접속마다 raw Thread를 만들지 않고 공유 스케줄러에 유예 종료를 예약한다(스레드 폭발 방지).
         duplicateLoginScheduler.schedule(() -> {
             try {
-                existingClient.sendEvent(SESSION_ENDED, Map.of(
+                socketIOServer.getRoomOperations(targetRoom).sendEvent(SESSION_ENDED, Map.of(
                         "reason", "duplicate_login",
                         "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
                 ));
