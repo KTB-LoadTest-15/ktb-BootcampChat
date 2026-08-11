@@ -101,7 +101,6 @@ public class RoomJoinHandler {
                 .timestamp(LocalDateTime.now())
                 .mentions(new ArrayList<>())
                 .reactions(new HashMap<>())
-                .readers(new ArrayList<>())
                 .metadata(new HashMap<>())
                 .build();
 

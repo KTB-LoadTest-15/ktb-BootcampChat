@@ -5,6 +5,8 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.MarkAsReadRequest;
 import com.ktb.chatapp.dto.MessagesReadResponse;
+import com.ktb.chatapp.model.Message;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.service.readcursor.ReadCursorStore;
 import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
@@ -21,9 +23,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
  * 메시지 읽음 상태 처리 핸들러 (read cursor 방식).
  *
  * <p>읽음 상태를 per-message가 아니라 (roomId, userId) 커서에 저장한다. 클라가 보낸
- * "마지막으로 읽은 timestamp"까지 커서를 단조 전진시키고, 실제 전진했을 때만 방에 브로드캐스트한다.
- * 조회(message/user/room) 없이 인메모리 멤버십({@link UserRooms})으로 접근 검증하므로
- * 읽음 1건당 DB 왕복은 커서 upsert 1회뿐이다.
+ * "마지막으로 읽은 메시지 id"의 <b>서버 timestamp</b>까지 커서를 단조 전진시키고, 실제 전진했을
+ * 때만 방에 브로드캐스트한다. timestamp를 클라가 직접 정하지 않으므로 미래 시각 위조가 불가능하다.
+ * 접근 검증은 인메모리 멤버십({@link UserRooms})으로 하고, 읽음당 DB 왕복은 메시지 조회 1회 +
+ * 커서 upsert 1회뿐이다.
  */
 @Slf4j
 @Component
@@ -32,12 +35,13 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 public class MessageReadHandler {
 
     private final SocketIOServer socketIOServer;
+    private final MessageStore messageStore;
     private final ReadCursorStore readCursorStore;
     private final UserRooms userRooms;
     private final SocketDispatcher socketDispatcher;
 
     // 읽음 처리(커서 upsert + 브로드캐스트)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
-    // 같은 방은 단일 레인으로 직렬화되어 커서 read-compare-set이 레이스 없이 안전하다.
+    // 같은 방은 단일 레인으로 직렬화되어 커서 read-compare-set이 (단일 노드에서) 레이스 없이 안전하다.
     @OnEvent(MARK_MESSAGES_AS_READ)
     public void handleMarkAsRead(SocketIOClient client, MarkAsReadRequest data) {
         socketDispatcher.dispatch(
@@ -55,8 +59,9 @@ public class MessageReadHandler {
                 return;
             }
 
-            if (data == null || data.getRoomId() == null || data.getRoomId().isBlank()) {
-                client.sendEvent(ERROR, Map.of("message", "Invalid room"));
+            if (data == null || data.getRoomId() == null || data.getRoomId().isBlank()
+                    || data.getLastReadMessageId() == null || data.getLastReadMessageId().isBlank()) {
+                client.sendEvent(ERROR, Map.of("message", "Invalid request"));
                 return;
             }
 
@@ -68,14 +73,26 @@ public class MessageReadHandler {
                 return;
             }
 
-            boolean advanced = readCursorStore.advance(roomId, userId, data.getLastReadTs());
+            // timestamp는 클라가 아니라 서버 메시지에서 얻는다(위조 방지). 배칭 경합으로 이미 사라진
+            // 메시지면 조용히 무시하고, 방이 불일치하면 거부한다.
+            Message message = messageStore.findById(data.getLastReadMessageId()).orElse(null);
+            if (message == null) {
+                return;
+            }
+            if (!roomId.equals(message.getRoomId())) {
+                client.sendEvent(ERROR, Map.of("message", "Invalid room"));
+                return;
+            }
+
+            long lastReadTs = message.toTimestampMillis();
+            boolean advanced = readCursorStore.advance(roomId, userId, lastReadTs);
             if (!advanced) {
                 // 중복/역행 — 상태 변화 없으므로 브로드캐스트 생략.
                 return;
             }
 
             socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(MESSAGES_READ, new MessagesReadResponse(userId, data.getLastReadTs()));
+                    .sendEvent(MESSAGES_READ, new MessagesReadResponse(userId, lastReadTs));
 
         } catch (Exception e) {
             log.error("Error handling markMessagesAsRead", e);
