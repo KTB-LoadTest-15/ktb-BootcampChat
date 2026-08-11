@@ -10,6 +10,64 @@ const {
 } = require('./scenarios/profile.scenario.js');
 
 const ROOM_JOIN_METRIC_PREFIX = '[room-join-metric]';
+const BROWSER_DIAGNOSTIC_PREFIX = '[browser-diagnostic]';
+
+function sanitizeUrl(rawUrl) {
+    try {
+        const url = new URL(rawUrl);
+        return `${url.origin}${url.pathname}`;
+    } catch {
+        return rawUrl;
+    }
+}
+
+function logBrowserDiagnostic(vuContext, diagnostic) {
+    console.log(`${BROWSER_DIAGNOSTIC_PREFIX} ${JSON.stringify({
+        recordedAt: new Date().toISOString(),
+        loadScenario: vuContext.vars.currentScenario || null,
+        ...diagnostic,
+    })}`);
+}
+
+function collectBrowserDiagnostics(page, vuContext) {
+    page.on('response', (response) => {
+        const request = response.request();
+        const status = response.status();
+        const url = sanitizeUrl(response.url());
+        const isHealthResponse = url.endsWith('/api/health');
+        const isDocumentResponse = request.resourceType() === 'document';
+
+        // 정상 health 응답과 문서 응답도 남겨야 5xx가 어느 단계에서 시작됐는지
+        // 실패 응답만 보고 추측하지 않고 비교할 수 있다.
+        if (status < 500 && !isHealthResponse && !isDocumentResponse) return;
+
+        logBrowserDiagnostic(vuContext, {
+            event: 'response',
+            method: request.method(),
+            resourceType: request.resourceType(),
+            status,
+            url,
+        });
+    });
+
+    page.on('requestfailed', (request) => {
+        logBrowserDiagnostic(vuContext, {
+            event: 'request_failed',
+            method: request.method(),
+            resourceType: request.resourceType(),
+            errorText: request.failure()?.errorText || 'unknown',
+            url: sanitizeUrl(request.url()),
+        });
+    });
+
+    page.on('pageerror', (error) => {
+        logBrowserDiagnostic(vuContext, {
+            event: 'page_error',
+            message: error.message,
+            pathname: page.url() ? sanitizeUrl(page.url()) : null,
+        });
+    });
+}
 
 function collectRoomJoinBrowserLogs(page, vuContext) {
     page.on('console', (message) => {
@@ -73,6 +131,7 @@ async function allScenarios(page, vuContext) {
     const testUser = generateUserSchema();
     vuContext.vars.testUser = testUser;
     collectRoomJoinBrowserLogs(page, vuContext);
+    collectBrowserDiagnostics(page, vuContext);
 
     for (const scenario of allScenariosFlat) {
         vuContext.vars.currentScenario = scenario.name;
