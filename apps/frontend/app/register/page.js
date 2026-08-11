@@ -1,70 +1,41 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ErrorCircleIcon, CheckCircleIcon } from '@vapor-ui/icons';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-    Box,
-    Button,
-    Callout,
-    Field,
-    Form,
-    HStack,
-    Text,
-    TextInput,
-    VStack,
-} from '@vapor-ui/core';
+import styles from '../auth-form.module.css';
 
-const LoadingState = () => (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100vh',
-      backgroundColor: 'var(--vapor-color-background)',
-      color: 'var(--vapor-color-text-primary)',
-    }}
-  >
-    <div>Loading...</div>
-  </div>
-);
-
+// 회원가입 진입 페이지. 로그인 페이지와 동일한 이유로 네이티브 HTML 폼으로 재작성하고
+// `isLoading` 게이트를 제거해, input 이 프리렌더 HTML 에 포함되어 FCP 시점부터
+// fillable 하도록 한다. (부하 중 회원가입 타임아웃 완화)
 export default function RegisterPage() {
   const router = useRouter();
   const { register: registerContext, isAuthenticated, isLoading } = useAuth();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  });
+  // 언컨트롤드 입력(하이드레이션 경계 안전) — 자세한 이유는 app/page.js 참고.
+  const nameRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+  const confirmPasswordRef = useRef(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // 이미 로그인한 사용자는 /chat 으로 보낸다 (Pages Router 의 withoutAuth 가드 대체).
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
       router.replace('/chat');
     }
   }, [isAuthenticated, isLoading, router]);
 
-  const validateForm = () => {
-    // 비밀번호 일치 확인만 추가 검증 (나머지는 HTML5 폼 검증)
-    if (formData.password !== formData.confirmPassword) {
-      setError('비밀번호가 일치하지 않습니다.');
-      return false;
-    }
-
-    return true;
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!validateForm()) {
+    const name = nameRef.current?.value || '';
+    const email = emailRef.current?.value || '';
+    const password = passwordRef.current?.value || '';
+    const confirmPassword = confirmPasswordRef.current?.value || '';
+
+    if (password !== confirmPassword) {
+      setError('비밀번호가 일치하지 않습니다.');
       return;
     }
 
@@ -73,12 +44,10 @@ export default function RegisterPage() {
     setSuccess(false);
 
     try {
-      const { name, email, password } = formData;
       await registerContext({ name, email, password });
 
       setSuccess(true);
       setLoading(false);
-
       router.push('/');
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');
@@ -86,162 +55,116 @@ export default function RegisterPage() {
     }
   };
 
-  if (isLoading || isAuthenticated) {
-    return <LoadingState />;
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center p-[var(--vapor-space-300)] bg-[var(--vapor-color-background)]">
-      <VStack
-        $css={{
-          gap: '$250',
-          width: '400px',
-          padding: '$300',
-          borderRadius: '$300',
-          border: '1px solid var(--vapor-color-border-normal)',
-        }}
-        render={<Form onSubmit={handleSubmit} />}
-      >
-        <div className="text-center mb-4">
-          <img src="images/logo-h.png" className="w-1/2 mx-auto" alt="KTB Chat 로고" />
+    <div className={styles.page}>
+      <form className={styles.card} onSubmit={handleSubmit}>
+        <div className={styles.logo}>
+          <img src="images/logo-h.png" alt="KTB Chat 로고" />
         </div>
 
         {error && (
-          <Callout.Root colorPalette="warning" data-testid="register-error-message">
-            <Callout.Icon>
-              <ErrorCircleIcon />
-            </Callout.Icon>
+          <div className={styles.error} role="alert" data-testid="register-error-message">
             {error}
-          </Callout.Root>
+          </div>
         )}
 
         {success && (
-          <Callout.Root colorPalette="success" data-testid="register-success-message">
-            <Callout.Icon>
-              <CheckCircleIcon />
-            </Callout.Icon>
+          <div className={styles.success} role="status" data-testid="register-success-message">
             가입성공, 로그인 해 주세요.
-          </Callout.Root>
+          </div>
         )}
 
-        <VStack $css={{ gap: '$400' }}>
-          <VStack $css={{ gap: '$200' }}>
-            <Field.Root>
-              <Box
-                render={<Field.Label />}
-                $css={{ flexDirection: 'column' }}
-                style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}
-              >
-                이름
-                <TextInput
-                  id="register-name"
-                  size="lg"
-                  type="text"
-                  required
-                  disabled={loading}
-                  value={formData.name}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, name: value }))}
-                  placeholder="이름을 입력하세요"
-                  data-testid="register-name-input"
-                />
-              </Box>
-              <Field.Error match="valueMissing">이름을 입력해주세요.</Field.Error>
-            </Field.Root>
-
-            <Field.Root>
-              <Box
-                render={<Field.Label />}
-                $css={{ flexDirection: 'column' }}
-                style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}
-              >
-                이메일
-                <TextInput
-                  id="register-email"
-                  size="lg"
-                  type="email"
-                  required
-                  disabled={loading}
-                  value={formData.email}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, email: value }))}
-                  placeholder="이메일을 입력하세요"
-                  data-testid="register-email-input"
-                />
-              </Box>
-              <Field.Error match="valueMissing">이메일을 입력해주세요.</Field.Error>
-              <Field.Error match="typeMismatch">유효한 이메일 형식이 아닙니다.</Field.Error>
-            </Field.Root>
-
-            <Field.Root>
-              <Box
-                render={<Field.Label />}
-                $css={{ flexDirection: 'column' }}
-                style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}
-              >
-                비밀번호
-                <TextInput
-                  id="register-password"
-                  size="lg"
-                  type="password"
-                  required
-                  disabled={loading}
-                  value={formData.password}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, password: value }))}
-                  placeholder="비밀번호를 입력하세요"
-                  pattern="(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[\W_]).{8,16}"
-                  data-testid="register-password-input"
-                />
-              </Box>
-              <Field.Description>8~16자, 대소문자 영문, 숫자, 특수문자 포함</Field.Description>
-              <Field.Error match="valueMissing">비밀번호를 입력해주세요.</Field.Error>
-              <Field.Error match="patternMismatch">유효한 비밀번호 형식이 아닙니다.</Field.Error>
-            </Field.Root>
-
-            <Field.Root>
-              <Box
-                render={<Field.Label />}
-                $css={{ flexDirection: 'column' }}
-                style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}
-              >
-                비밀번호 확인
-                <TextInput
-                  id="register-password-confirm"
-                  size="lg"
-                  type="password"
-                  required
-                  disabled={loading}
-                  value={formData.confirmPassword}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, confirmPassword: value }))}
-                  placeholder="비밀번호를 다시 입력하세요"
-                  data-testid="register-password-confirm-input"
-                />
-              </Box>
-              <Field.Error match="valueMissing">비밀번호 확인을 입력해주세요.</Field.Error>
-            </Field.Root>
-          </VStack>
-
-          <Button
-            type="submit"
-            size="lg"
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="register-name">
+            이름
+          </label>
+          <input
+            id="register-name"
+            ref={nameRef}
+            className={styles.input}
+            type="text"
+            required
             disabled={loading}
-            data-testid="register-submit-button"
-          >
-            {loading ? '회원가입 중...' : '회원가입'}
-          </Button>
-        </VStack>
+            defaultValue=""
+            placeholder="이름을 입력하세요"
+            data-testid="register-name-input"
+          />
+        </div>
 
-        <HStack $css={{ justifyContent: 'center' }}>
-          <Text typography="body2">이미 계정이 있으신가요?</Text>
-          <Button
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="register-email">
+            이메일
+          </label>
+          <input
+            id="register-email"
+            ref={emailRef}
+            className={styles.input}
+            type="email"
+            required
+            disabled={loading}
+            defaultValue=""
+            placeholder="이메일을 입력하세요"
+            data-testid="register-email-input"
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="register-password">
+            비밀번호
+          </label>
+          <input
+            id="register-password"
+            ref={passwordRef}
+            className={styles.input}
+            type="password"
+            required
+            disabled={loading}
+            defaultValue=""
+            placeholder="비밀번호를 입력하세요"
+            pattern="(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[\W_]).{8,16}"
+            data-testid="register-password-input"
+          />
+          <span className={styles.hint}>8~16자, 대소문자 영문, 숫자, 특수문자 포함</span>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="register-password-confirm">
+            비밀번호 확인
+          </label>
+          <input
+            id="register-password-confirm"
+            ref={confirmPasswordRef}
+            className={styles.input}
+            type="password"
+            required
+            disabled={loading}
+            defaultValue=""
+            placeholder="비밀번호를 다시 입력하세요"
+            data-testid="register-password-confirm-input"
+          />
+        </div>
+
+        <button
+          type="submit"
+          className={styles.submit}
+          disabled={loading}
+          data-testid="register-submit-button"
+        >
+          {loading ? '회원가입 중...' : '회원가입'}
+        </button>
+
+        <div className={styles.footer}>
+          <span>이미 계정이 있으신가요?</span>
+          <button
             type="button"
-            size="sm"
-            variant="ghost"
+            className={styles.link}
             onClick={() => router.push('/')}
             disabled={loading}
           >
             로그인
-          </Button>
-        </HStack>
-      </VStack>
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

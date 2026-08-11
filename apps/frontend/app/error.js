@@ -2,11 +2,42 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, HStack, Text, VStack } from '@vapor-ui/core';
 
-// App Router 세그먼트 에러 바운더리. 렌더 중 던져진 런타임 에러를 잡아
-// 커스텀 화면을 보여준다(없으면 Next 기본 에러 화면). Pages Router 의 _error.js 를
-// App Router 방식으로 대체하는 쪽(런타임 에러). 404 는 not-found.js 가 담당한다.
+// App Router 세그먼트 에러 바운더리. 루트 레이아웃에서 vapor ThemeProvider/CSS 를
+// 제거했으므로 네이티브 마크업 + 인라인 스타일로 자립한다. 404 는 not-found.js 담당.
+const page = {
+  minHeight: '100vh',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '24px',
+  padding: '32px',
+  textAlign: 'center',
+  backgroundColor: '#16171a',
+  color: '#e8e9ea',
+};
+const primaryButton = {
+  padding: '10px 18px',
+  fontSize: '15px',
+  fontWeight: 600,
+  border: 'none',
+  borderRadius: '8px',
+  backgroundColor: '#2f6feb',
+  color: '#ffffff',
+  cursor: 'pointer',
+};
+const ghostButton = {
+  padding: '10px 18px',
+  fontSize: '15px',
+  fontWeight: 600,
+  border: '1px solid #34363c',
+  borderRadius: '8px',
+  backgroundColor: 'transparent',
+  color: '#e8e9ea',
+  cursor: 'pointer',
+};
+
 export default function Error({ error, reset }) {
   const router = useRouter();
 
@@ -15,38 +46,28 @@ export default function Error({ error, reset }) {
   }, [error]);
 
   return (
-    <VStack
-      $css={{
-        minHeight: '100vh',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 'var(--vapor-space-300)',
-        padding: 'var(--vapor-space-400)',
-        textAlign: 'center',
-        backgroundColor: 'var(--vapor-color-background)',
-      }}
-    >
+    <div style={page}>
       <img
         src="/404-dark.svg"
         alt=""
         style={{ width: '280px', maxWidth: '80%', height: 'auto' }}
       />
-      <Text typography="heading3" foreground="normal-100">
+      <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>
         문제가 발생했어요
-      </Text>
-      <Text typography="body2" foreground="normal-200">
+      </h1>
+      <p style={{ fontSize: '14px', color: '#9aa0a6', margin: 0, lineHeight: 1.5 }}>
         페이지를 표시하는 중 오류가 발생했습니다.
         <br />
         잠시 후 다시 시도해주세요.
-      </Text>
-      <HStack $css={{ gap: 'var(--vapor-space-200)' }}>
-        <Button colorPalette="primary" onClick={() => reset()}>
+      </p>
+      <div style={{ display: 'flex', gap: '12px' }}>
+        <button type="button" style={primaryButton} onClick={() => reset()}>
           다시 시도
-        </Button>
-        <Button variant="ghost" onClick={() => router.push('/')}>
+        </button>
+        <button type="button" style={ghostButton} onClick={() => router.push('/')}>
           홈으로 돌아가기
-        </Button>
-      </HStack>
-    </VStack>
+        </button>
+      </div>
+    </div>
   );
 }
