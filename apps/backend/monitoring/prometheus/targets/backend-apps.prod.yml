@@ -9,6 +9,13 @@
     - 'IP:5001'  # your-app-server2
     - 'IP:5001'  # your-app-server3
     - 'IP:5001'  # your-app-server4
+    - '10.0.1.181:5001'  # your-app-server1
+    - '10.0.2.188:5001'  # your-app-server2
+    - '10.0.2.62:5001'  # your-app-server3
+    - '10.0.2.212:5001'  # your-app-server4
+    - '10.0.2.182:5001'  # your-app-server4
+    - '10.0.2.186:5001'  # your-app-server4
+    - '10.0.2.26:5001'  # your-app-server4
   labels:
     application: 'ktb-chat-backend'
     environment: 'production'
