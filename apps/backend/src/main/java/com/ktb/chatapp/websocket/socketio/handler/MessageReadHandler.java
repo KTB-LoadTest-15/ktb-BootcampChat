@@ -39,12 +39,13 @@ public class MessageReadHandler {
     private final ReadReceiptCoalescer readReceiptCoalescer;
     private final SocketDispatcher socketDispatcher;
 
-    // 읽음 처리(커서 upsert + 브로드캐스트)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
-    // 같은 방은 단일 레인으로 직렬화되어 커서 read-compare-set이 (단일 노드에서) 레이스 없이 안전하다.
+    // 읽음 처리(커서 upsert + coalescing)를 event-loop에서 분리해 연결(세션) 단위로 오프로드한다.
+    // roomId 키로 묶으면 인기 방의 모든 읽음이 한 레인에 몰려 큐가 포화되므로, 세션 키로 레인을 분산한다.
+    // 커서 advance는 단조($max/같은 세션 직렬화)라 순서 무관하고, coalescer는 키 단위 원자성으로 안전하다.
     @OnEvent(MARK_MESSAGES_AS_READ)
     public void handleMarkAsRead(SocketIOClient client, MarkAsReadRequest data) {
         socketDispatcher.dispatch(
-                orderingKey(data, client),
+                sessionKey(client),
                 () -> processMarkAsRead(client, data),
                 () -> client.sendEvent(ERROR,
                         Map.of("message", "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.")));
@@ -106,10 +107,7 @@ public class MessageReadHandler {
         return user != null ? user.id() : null;
     }
 
-    private static String orderingKey(MarkAsReadRequest data, SocketIOClient client) {
-        if (data != null && data.getRoomId() != null && !data.getRoomId().isBlank()) {
-            return data.getRoomId();
-        }
+    private static String sessionKey(SocketIOClient client) {
         var sessionId = client.getSessionId();
         return sessionId != null ? sessionId.toString() : "unknown";
     }

@@ -25,9 +25,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.MESSAGES_READ;
  * 동안 같은 방의 커서 갱신을 모아 {@code {userId → lastReadTs}} 맵 1건으로 방출하면, 창당 broadcast가
  * 1회로 줄어 N²를 N으로 낮춘다. 더 큰 lastReadTs가 이전 값을 대체하므로 손실 없이 묶인다.
  *
- * <p>같은 방의 {@link #enqueue}는 dispatcher가 roomId 레인으로 직렬화하고, 버퍼 접근은
- * {@link ConcurrentHashMap#compute}/{@link ConcurrentHashMap#computeIfPresent}의 키 단위 원자성으로
- * enqueue-merge와 flush-take가 서로 끼어들지 않게 한다. window ≤ 0이면 즉시 broadcast(테스트/비활성).
+ * <p>읽음은 세션 키로 여러 레인에 분산되므로 같은 방의 {@link #enqueue}가 동시에 들어올 수 있다.
+ * 버퍼 접근을 {@link ConcurrentHashMap#compute}/{@link ConcurrentHashMap#computeIfPresent}의 키 단위
+ * 원자성으로 감싸 enqueue-merge와 flush-take가 서로 끼어들지 않게 한다(레인 직렬화에 의존하지 않음).
+ * window ≤ 0이면 즉시 broadcast(테스트/비활성).
  */
 @Slf4j
 @Component
