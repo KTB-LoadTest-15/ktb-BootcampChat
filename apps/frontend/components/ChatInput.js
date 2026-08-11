@@ -25,6 +25,7 @@ const ChatInput = forwardRef(({
   const dropZoneRef = useRef(null);
   const internalInputRef = useRef(null);
   const messageInputRef = ref || internalInputRef;
+  const selectedFilesRef = useRef([]);
 
   const {
     message,
@@ -53,7 +54,10 @@ const ChatInput = forwardRef(({
     if (!file) return;
 
     try {
-      await fileService.validateFile(file);
+      const validationResult = await fileService.validateFile(file);
+      if (!validationResult.success) {
+        throw new Error(validationResult.message);
+      }
       
       const filePreview = {
         file,
@@ -63,7 +67,8 @@ const ChatInput = forwardRef(({
         size: file.size
       };
       
-      setFiles(prev => [...prev, filePreview]);
+      selectedFilesRef.current = [...selectedFilesRef.current, filePreview];
+      setFiles(selectedFilesRef.current);
       setUploadError(null);
       onFileSelect?.(file);
       
@@ -78,7 +83,10 @@ const ChatInput = forwardRef(({
   }, [onFileSelect]);
 
   const handleFileRemove = useCallback((fileToRemove) => {
-    setFiles(prev => prev.filter(file => file.name !== fileToRemove.name));
+    selectedFilesRef.current = selectedFilesRef.current.filter(
+      file => file.name !== fileToRemove.name
+    );
+    setFiles(selectedFilesRef.current);
     URL.revokeObjectURL(fileToRemove.url);
     setUploadError(null);
     setUploadProgress(0);
@@ -102,14 +110,16 @@ const ChatInput = forwardRef(({
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
 
-    if (files.length > 0) {
+    const selectedFiles = selectedFilesRef.current;
+    if (selectedFiles.length > 0) {
       try {
-        const file = files[0];
+        setUploading(true);
+        const file = selectedFiles[0];
         if (!file || !file.file) {
           throw new Error('파일이 선택되지 않았습니다.');
         }
 
-        onSubmit({
+        await onSubmit({
           type: 'file',
           content: message.trim(),
           fileData: file
@@ -118,11 +128,14 @@ const ChatInput = forwardRef(({
         setMessage('');
         setShowEmojiPicker(false);
         setShowMentionList(false);
+        selectedFilesRef.current = [];
         setFiles([]);
 
       } catch (error) {
         console.error('File submit error:', error);
         setUploadError(error.message);
+      } finally {
+        setUploading(false);
       }
     } else if (message.trim()) {
       onSubmit({

@@ -31,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,17 +52,24 @@ public class FileController {
     @PostMapping("/upload/presign")
     public ResponseEntity<?> presignUpload(
             @Valid @RequestBody PresignedUploadRequest request,
-            Principal principal) {
+            Authentication authentication) {
         PresignedFileUploadService service = presignedUploadService.getIfAvailable();
         if (service == null) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
                     .body(Map.of("success", false, "message", "S3 업로드가 활성화되지 않았습니다."));
         }
 
-        User user = userRepository.findByEmail(principal.getName())
-                .orElseThrow(() -> new UsernameNotFoundException(
-                        "User not found: " + principal.getName()));
-        return ResponseEntity.ok(service.issue(request, user.getId()));
+        return ResponseEntity.ok(service.issue(request, authenticatedUserId(authentication)));
+    }
+
+    private String authenticatedUserId(Authentication authentication) {
+        if (authentication != null && authentication.getDetails() instanceof Map<?, ?> details) {
+            Object userId = details.get("userId");
+            if (userId instanceof String value && !value.isBlank()) {
+                return value;
+            }
+        }
+        throw new UsernameNotFoundException("인증된 사용자 ID를 찾을 수 없습니다.");
     }
 
     /**

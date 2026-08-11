@@ -5,7 +5,7 @@ import { Toast } from '../components/Toast';
 class FileService {
   constructor() {
     this.baseUrl = process.env.NEXT_PUBLIC_API_URL;
-    this.uploadLimit = 50 * 1024 * 1024; // 50MB
+    this.uploadLimit = 5 * 1024 * 1024; // Backend policy: 5MB
     this.retryAttempts = 3;
     this.retryDelay = 1000;
     this.activeUploads = new Map();
@@ -14,13 +14,13 @@ class FileService {
       image: {
         extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
         mimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-        maxSize: 10 * 1024 * 1024,
+        maxSize: 5 * 1024 * 1024,
         name: '이미지'
       },
       document: {
         extensions: ['.pdf'],
         mimeTypes: ['application/pdf'],
-        maxSize: 20 * 1024 * 1024,
+        maxSize: 5 * 1024 * 1024,
         name: 'PDF 문서'
       }
     };
@@ -103,6 +103,9 @@ class FileService {
         },
         // 업로드는 한도가 50MB 라 공통 타임아웃으로는 정상 전송도 끊긴다.
         timeout: 30000,
+        // Multipart POST is not idempotent. Retrying after a lost response can
+        // store the same file multiple times and amplify an upload spike.
+        maxRetries: 0,
         cancelToken: source.token,
         withCredentials: true,
         onUploadProgress: (progressEvent) => {
@@ -164,7 +167,7 @@ class FileService {
           mimetype: file.type,
           size: file.size
         },
-        { withCredentials: true, timeout: 10000 }
+        { withCredentials: true, timeout: 10000, maxRetries: 0 }
       );
 
       const { uploadUrl, objectKey, file: fileData } = presignResponse.data || {};
@@ -172,14 +175,23 @@ class FileService {
         throw new Error('S3 업로드 URL 응답이 올바르지 않습니다.');
       }
 
+      // XHR progress events can fire dozens of times per upload. Under a browser
+      // spike that causes every VU to repeatedly render React state while the
+      // network is already saturated, so only publish meaningful progress steps.
+      let lastReportedProgress = -1;
+      const reportProgress = (progressEvent) => {
+        if (!onProgress || !progressEvent.total) return;
+        const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        if (progress === 100 || progress - lastReportedProgress >= 10) {
+          lastReportedProgress = progress;
+          onProgress(progress);
+        }
+      };
+
       await axios.put(uploadUrl, file, {
         headers: { 'Content-Type': file.type },
         timeout: 30000,
-        onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            onProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
-          }
-        }
+        onUploadProgress: reportProgress
       });
 
       return {

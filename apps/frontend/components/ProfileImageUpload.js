@@ -67,6 +67,9 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
+          // File uploads are not idempotent; a delayed response must not create
+          // duplicate S3 objects or multiply load during a spike.
+          maxRetries: 0,
         }
       );
 
