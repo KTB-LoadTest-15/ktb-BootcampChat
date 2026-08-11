@@ -43,6 +43,9 @@ class AuthService {
       const response = await api.post('/api/auth/login', credentials, {
         skipAuth: true,
         handleAuthError: false,
+        // 로그인은 세션을 새로 만드는 비멱등 요청이다. 타임아웃/5xx 때 자동 재시도하면
+        // 한 사용자의 요청이 세 번까지 불어나고 세션 생성도 경합할 수 있다.
+        maxRetries: 0,
       });
 
       if (response.data?.success && response.data?.token) {
@@ -61,19 +64,21 @@ class AuthService {
       throw new Error(response.data?.message || '로그인에 실패했습니다.');
 
     } catch (error) {
-      if (error.response?.status === 401) {
+      const status = error.response?.status ?? error.status;
+
+      if (status === 401) {
         throw new Error('이메일 주소가 없거나 비밀번호가 틀렸습니다.');
       }
 
-      if (error.response?.status === 429) {
+      if (status === 429) {
         throw new Error('너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해주세요.');
       }
 
-      if (!error.response) {
+      if (!error.response && !status) {
         throw new Error('서버와 통신할 수 없습니다. 잠시 후 다시 시도해주세요.');
       }
 
-      const errorMessage = error.response?.data?.message || '로그인 중 오류가 발생했습니다.';
+      const errorMessage = error.response?.data?.message || error.data?.message || error.message || '로그인 중 오류가 발생했습니다.';
       throw new Error(errorMessage);
     }
   }
@@ -101,7 +106,10 @@ class AuthService {
    */
   async register(userData) {
     try {
-      const response = await api.post('/api/auth/register', userData);
+      const response = await api.post('/api/auth/register', userData, {
+        // 회원가입도 중복 생성 위험이 있으므로 공통 5xx/timeout 재시도를 적용하지 않는다.
+        maxRetries: 0,
+      });
 
       if (response.data?.success) {
         return response.data;

@@ -55,7 +55,7 @@ const Register = () => {
       setSuccess(true);
       setLoading(false);
 
-      await router.push('/login');
+      await router.push('/');
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');
       setLoading(false);

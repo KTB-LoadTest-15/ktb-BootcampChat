@@ -19,6 +19,9 @@ const createSocket = ({ connected = false } = {}) => ({
 });
 
 const flushPromises = async () => {
+  // socket.io-client 의 동적 import(코드 스플리팅) job 은 fake timers 환경에서
+  // 마이크로태스크만으론 안 풀릴 수 있어, 타이머 큐도 0 으로 함께 민다.
+  await vi.advanceTimersByTimeAsync(0);
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
@@ -56,6 +59,8 @@ describe('socketService', () => {
       error => error.message
     );
 
+    // socket.io-client 가 동적 import 라 소켓 세팅은 한 틱 뒤에 이뤄진다.
+    await flushPromises();
     service.disconnect();
     await flushPromises();
 
@@ -67,11 +72,12 @@ describe('socketService', () => {
     expect(service.connectionTimeout).toBeNull();
   });
 
-  it('registers reconnect lifecycle handlers on the Socket.IO manager', () => {
+  it('registers reconnect lifecycle handlers on the Socket.IO manager', async () => {
     const socket = createSocket();
     io.mockReturnValue(socket);
 
     service.connect().catch(() => {});
+    await flushPromises();
 
     expect(socket.io.on).toHaveBeenCalledWith('reconnect', expect.any(Function));
     expect(socket.io.on).toHaveBeenCalledWith('reconnect_failed', expect.any(Function));
@@ -85,12 +91,14 @@ describe('socketService', () => {
     io.mockReturnValueOnce(failedSocket).mockReturnValueOnce(liveSocket);
 
     const failedConnection = service.connect().catch(error => error.message);
+    await flushPromises();
     getSocketHandler(failedSocket, 'connect_error')(new Error('Invalid session'));
     await flushPromises();
 
     await expect(failedConnection).resolves.toBe('Invalid session');
 
     const liveConnection = service.connect();
+    await flushPromises();
     getSocketHandler(liveSocket, 'connect')();
     await expect(liveConnection).resolves.toBe(liveSocket);
 
@@ -107,6 +115,7 @@ describe('socketService', () => {
     io.mockReturnValue(socket);
 
     const connection = service.connect().catch(error => error.message);
+    await flushPromises();
 
     await vi.advanceTimersByTimeAsync(30000);
     await flushPromises();
@@ -129,6 +138,7 @@ describe('socketService', () => {
       error => error.message
     );
 
+    await flushPromises();
     const reconnectAttempt = service.reconnect();
     const settledReconnect = reconnectAttempt.then(
       () => 'resolved',

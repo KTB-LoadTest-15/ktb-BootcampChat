@@ -109,6 +109,8 @@ export const createHttpError = (error, config, retry) => {
   enhancedError.status = status;
   enhancedError.code = errorData?.code;
   enhancedError.data = errorData;
+  // 엔드포인트별 오류 처리 코드가 Axios와 동일한 형태로 상태/본문을 읽을 수 있게 한다.
+  enhancedError.response = error.response;
   enhancedError.config = config;
   enhancedError.originalError = error;
   enhancedError.retry = retry;

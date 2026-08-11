@@ -7,7 +7,8 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
  * @param waitForRedirect
  */
 async function loginAction(page, credentials, waitForRedirect = true) {
-  await page.goto(`${BASE_URL}/login`);
+  // 로그인 화면의 canonical URL을 직접 사용한다. /login은 북마크 호환용 서버 redirect다.
+  await page.goto(`${BASE_URL}/`);
   await page.getByTestId('login-email-input').fill(credentials.email);
   await page.getByTestId('login-password-input').fill(credentials.password);
   await page.getByTestId('login-submit-button').click();
@@ -29,10 +30,10 @@ async function registerAction(page, userData) {
   await page.getByTestId('register-password-confirm-input').fill(userData.passwordConfirm);
   await page.getByTestId('register-name-input').fill(userData.name);
   await page.getByTestId('register-submit-button').click();
-  // 성공 시 앱이 1000ms 뒤 router.push('/login')로 이동하므로, 그 내비게이션이 끝난 뒤에
+  // 성공 시 앱이 router.push('/')로 이동하므로, 그 내비게이션이 끝난 뒤에
   // 다음 goto가 실행되어야 경합(net::ERR_ABORTED)이 없다. 실패 시엔 에러 메시지 표시까지 대기.
   await Promise.race([
-    page.waitForURL(`${BASE_URL}/login`, { timeout: 10000 }).catch(() => {}),
+    page.waitForURL(`${BASE_URL}/`, { timeout: 10000 }).catch(() => {}),
     page.getByTestId('register-error-message').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {}),
   ]);
 }

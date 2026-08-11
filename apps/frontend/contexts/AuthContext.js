@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect, useCallback, useRef, useContext } from 'react';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/compat/router';
 import socketService from '../services/socket';
 import authService from '../services/authService';
 import api, { getAuthHeaders } from '../lib/api/client';

@@ -16,6 +16,7 @@ App Router와 Pages Router가 함께 사용됩니다.
   - 전역 Provider: `apps/frontend/app/providers.js`
 - Pages Router
   - 로그인 `/`: `apps/frontend/pages/index.js`
+  - `/login`: 화면을 중복 렌더링하지 않고 `next.config.js`에서 `/`로 리다이렉트
   - 회원가입 `/register`: `apps/frontend/pages/register.js`
   - 프로필 `/profile`: `apps/frontend/pages/profile.js`
   - 방 생성 `/chat/new`: `apps/frontend/pages/chat/new.js`

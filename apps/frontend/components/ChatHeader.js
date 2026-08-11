@@ -1,12 +1,11 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { HStack, NavigationMenu } from '@vapor-ui/core';
 import { useAuth } from '@/contexts/AuthContext';
 
 const ChatHeader = () => {
-  const router = useRouter();
   const { logout } = useAuth();
 
   const handleLogout = async () => {
@@ -24,9 +23,10 @@ const ChatHeader = () => {
       className="bg-surface-200 backdrop-blur-sm sticky top-0 z-10"
     >
       {/* 왼쪽: 로고 */}
-      <button
-        onClick={() => router.push('/chat')}
+      <Link
+        href="/chat"
         className="bg-transparent border-none cursor-pointer p-0"
+        aria-label="채팅방 목록으로 이동"
       >
         <img
           src="/images/logo.png"
@@ -34,7 +34,7 @@ const ChatHeader = () => {
           height={15}
           className="logo"
         />
-      </button>
+      </Link>
 
       {/* 오른쪽: 네비게이션 메뉴 */}
       <NavigationMenu.Root aria-label="Chat Actions">

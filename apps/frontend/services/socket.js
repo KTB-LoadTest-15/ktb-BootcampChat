@@ -1,5 +1,3 @@
-import { io } from 'socket.io-client';
-
 const CLEANUP_REASONS = {
   DISCONNECT: 'disconnect',
   MANUAL: 'manual',
@@ -28,7 +26,11 @@ export class SocketService {
       return Promise.resolve(this.socket);
     }
 
-    const connectionPromise = new Promise((resolve, reject) => {
+    // socket.io-client 를 동적 import 로 분리(code-splitting)한다.
+    // 정적 import면 _app 번들에 항상 실려, 로그인 등 소켓을 안 쓰는 페이지도
+    // socket.io-client(~100KB)를 다운로드·파싱해야 한다(하이드레이션 지연).
+    // 실제 연결이 필요한 이 시점에만 별도 청크로 받아온다.
+    const connectionPromise = import('socket.io-client').then(({ io }) => new Promise((resolve, reject) => {
       let socket = null;
 
       const resolveConnection = (connectedSocket) => {
@@ -86,7 +88,7 @@ export class SocketService {
       } catch (error) {
         rejectConnection(error, socket);
       }
-    }).finally(() => {
+    })).finally(() => {
       if (this.connectionPromise === connectionPromise) {
         this.connectionPromise = null;
       }
