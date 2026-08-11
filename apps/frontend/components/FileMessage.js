@@ -27,10 +27,13 @@ const FileMessage = ({
 }) => {
   const { user } = useAuth();
   const [error, setError] = useState(null);
+  const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const messageDomRef = useRef(null);
   useEffect(() => {
     if (msg?.file) {
+      setError(null);
+      setImageLoadFailed(false);
       const url = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
       setPreviewUrl(url);
       console.debug('Preview URL generated:', {
@@ -159,7 +162,7 @@ const FileMessage = ({
 
   const renderImagePreview = (originalname) => {
     try {
-      if (!msg?.file?.filename) {
+      if (!msg?.file?.filename || imageLoadFailed) {
         return (
           <div className="flex items-center justify-center h-full bg-gray-100">
             <Image className="w-8 h-8 text-gray-400" />
@@ -188,7 +191,7 @@ const FileMessage = ({
                 originalname
               });
               e.target.onerror = null;
-              e.target.src = '/images/placeholder-image.png';
+              setImageLoadFailed(true);
               setError('이미지를 불러올 수 없습니다.');
             }}
             loading="lazy"
@@ -336,11 +339,11 @@ const FileMessage = ({
           <div className={`
             ${isMine ? 'text-blue-100' : 'text-white'}
           `}>
+            {renderFilePreview()}
             {error && (
-              <div>{error}</div>
+              <div role="alert" className="mt-2 text-sm text-red-300">{error}</div>
             )}
-            {!error && renderFilePreview()}
-            {!error && msg.content && (
+            {msg.content && (
               <div className="mt-3 text-base leading-relaxed">
                 <MessageContent content={msg.content} />
               </div>

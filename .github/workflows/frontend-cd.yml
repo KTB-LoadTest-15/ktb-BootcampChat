@@ -47,6 +47,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_SOCKET_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
+          NEXT_PUBLIC_FILE_UPLOAD_MODE: ${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
           FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_HOST: ${{ secrets.BASTION_HOST }}
@@ -54,8 +55,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]; then
-            echo "::error::Repository variables FRONTEND_NEXT_PUBLIC_API_URL and FRONTEND_NEXT_PUBLIC_SOCKET_URL must be set."
+          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ] || [ -z "${NEXT_PUBLIC_FILE_UPLOAD_MODE:-}" ]; then
+            echo "::error::Repository variables FRONTEND_NEXT_PUBLIC_API_URL, FRONTEND_NEXT_PUBLIC_SOCKET_URL, and FRONTEND_FILE_UPLOAD_MODE must be set."
             exit 1
           fi
 
@@ -86,6 +87,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_SOCKET_URL=${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
+            NEXT_PUBLIC_FILE_UPLOAD_MODE=${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 

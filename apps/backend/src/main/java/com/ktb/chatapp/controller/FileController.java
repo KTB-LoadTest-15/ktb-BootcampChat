@@ -1,12 +1,14 @@
 package com.ktb.chatapp.controller;
 
 import com.ktb.chatapp.dto.StandardResponse;
+import com.ktb.chatapp.dto.PresignedUploadRequest;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.FileAccess;
 import com.ktb.chatapp.service.FileAccessService;
 import com.ktb.chatapp.service.FileService;
 import com.ktb.chatapp.service.FileUploadResult;
+import com.ktb.chatapp.service.PresignedFileUploadService;
 import com.ktb.chatapp.service.PreviewNotSupportedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -16,6 +18,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
@@ -27,6 +30,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,6 +45,24 @@ public class FileController {
     private final FileService fileService;
     private final FileAccessService fileAccessService;
     private final UserRepository userRepository;
+    private final ObjectProvider<PresignedFileUploadService> presignedUploadService;
+
+    /** S3 직접 업로드용 임시 PUT URL을 발급한다. object key는 서버만 생성한다. */
+    @PostMapping("/upload/presign")
+    public ResponseEntity<?> presignUpload(
+            @Valid @RequestBody PresignedUploadRequest request,
+            Principal principal) {
+        PresignedFileUploadService service = presignedUploadService.getIfAvailable();
+        if (service == null) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                    .body(Map.of("success", false, "message", "S3 업로드가 활성화되지 않았습니다."));
+        }
+
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new UsernameNotFoundException(
+                        "User not found: " + principal.getName()));
+        return ResponseEntity.ok(service.issue(request, user.getId()));
+    }
 
     /**
      * 파일 업로드
