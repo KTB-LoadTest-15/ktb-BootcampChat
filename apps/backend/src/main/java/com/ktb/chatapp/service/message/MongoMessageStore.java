@@ -121,9 +121,4 @@ public class MongoMessageStore implements MessageStore {
         Page<Message> page = messageRepository.findByRoomIdAndTimestampBefore(roomId, before, pageable);
         return new MessagePage(page.getContent(), page.hasNext());
     }
-
-    @Override
-    public long addReaderToMessages(List<String> messageIds, String userId, LocalDateTime readAt) {
-        return messageRepository.updateReadersForMessages(messageIds, userId, readAt);
-    }
 }

@@ -50,12 +50,6 @@ public interface MessageStore {
      */
     MessagePage findMessagesBefore(String roomId, LocalDateTime before, int limit);
 
-    /**
-     * 주어진 메시지들 중 아직 이 사용자가 읽지 않은 문서에만 reader를 추가한다.
-     * @return 새로 읽음 처리된 문서 수
-     */
-    long addReaderToMessages(List<String> messageIds, String userId, LocalDateTime readAt);
-
     /** 페이지 결과: 메시지 목록(DESC)과 다음 페이지 존재 여부. */
     record MessagePage(List<Message> messages, boolean hasMore) {}
 }

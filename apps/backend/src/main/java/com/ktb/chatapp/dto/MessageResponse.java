@@ -1,10 +1,8 @@
 package com.ktb.chatapp.dto;
 
 import com.ktb.chatapp.model.AiType;
-import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.AllArgsConstructor;
@@ -40,9 +38,9 @@ public class MessageResponse {
     private long timestamp;
     
     private Map<String, Set<String>> reactions;
-    
-    private List<Message.MessageReader> readers;
-    
+
+    // 읽음 상태는 read cursor(방-멤버 커서)로 이관되어 메시지 페이로드에서 제거됨.
+
     // metadata는 자유 형식 (Map<String, Object>)
     private Map<String, Object> metadata;
 }

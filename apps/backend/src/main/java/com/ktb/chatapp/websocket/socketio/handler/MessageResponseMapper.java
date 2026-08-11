@@ -7,7 +7,6 @@ import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.service.FileUrl;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -40,9 +39,7 @@ public class MessageResponseMapper {
                 .timestamp(message.toTimestampMillis())
                 .roomId(message.getRoomId())
                 .reactions(message.getReactions() != null ?
-                        message.getReactions() : new HashMap<>())
-                .readers(message.getReaders() != null ?
-                        message.getReaders() : new ArrayList<>());
+                        message.getReactions() : new HashMap<>());
 
         // 발신자 정보 설정
         if (sender != null) {

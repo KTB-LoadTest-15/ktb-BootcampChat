@@ -11,6 +11,8 @@ export const createInitialChatRoomState = () => ({
   isInitialized: false,
   hasMoreMessages: true,
   loadingMessages: false,
+  // 방 참가자들의 읽음 커서(userId → lastReadTs epoch millis). read cursor 방식.
+  readCursors: {},
 });
 
 const resolveValue = (value, currentValue) => (
@@ -45,6 +47,7 @@ export const chatRoomReducer = (state, action) => {
         loading: false,
         loadingMessages: false,
         messages: [],
+        readCursors: {},
       };
     case 'room/changed':
       return {
@@ -55,6 +58,11 @@ export const chatRoomReducer = (state, action) => {
       return {
         ...state,
         messages: resolveValue(action.messages, state.messages),
+      };
+    case 'readCursors/changed':
+      return {
+        ...state,
+        readCursors: resolveValue(action.readCursors, state.readCursors),
       };
     case 'error/changed':
       return {
@@ -136,6 +144,7 @@ export const useChatRoomState = () => {
     cleanupManual: () => dispatch({ type: 'room/cleanupManual' }),
     setRoom: room => dispatch({ type: 'room/changed', room }),
     setMessages: messages => dispatch({ type: 'messages/changed', messages }),
+    setReadCursors: readCursors => dispatch({ type: 'readCursors/changed', readCursors }),
     setError: error => dispatch({ type: 'error/changed', error }),
     setLoadingMessages: value => dispatch({
       type: 'messages/loadingChanged',

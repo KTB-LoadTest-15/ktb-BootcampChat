@@ -79,13 +79,13 @@ class RedisModeMongoBypassIntegrationTest {
         LocalDateTime base = LocalDateTime.now().minusMinutes(5);
 
         listener.start();
-        // send 3 + load + count + read + findById — 전부 Redis로 가야 한다
+        // send 3 + load + count + reaction + findById — 전부 Redis로 가야 한다
         String id0 = messageStore.add(newMessage("hello", base)).getId();
         messageStore.add(newMessage("world", base.plusSeconds(1)));
         messageStore.add(newMessage("!!", base.plusSeconds(2)));
         MessageStore.MessagePage page = messageStore.findMessagesBefore(roomId, LocalDateTime.now(), 30);
         long recent = messageStore.countRecentMessages(roomId, base.minusMinutes(1));
-        messageStore.addReaderToMessages(List.of(id0), "user-A", LocalDateTime.now());
+        messageStore.addReaction(id0, "👍", "user-A");
         messageStore.findById(id0);
         listener.stop();
 
@@ -105,7 +105,7 @@ class RedisModeMongoBypassIntegrationTest {
         LocalDateTime base = LocalDateTime.now().minusMinutes(5);
         String id0 = messageStore.add(newMessage("첫 메시지", base)).getId();
         messageStore.add(newMessage("둘째 메시지", base.plusSeconds(1)));
-        messageStore.addReaderToMessages(List.of(id0), "user-A", LocalDateTime.now());
+        messageStore.addReaction(id0, "👍", "user-A");
 
         System.out.println("========== REDIS DUMP (message.store=redis) ==========");
 

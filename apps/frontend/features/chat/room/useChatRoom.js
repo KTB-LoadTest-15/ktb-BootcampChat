@@ -25,6 +25,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     messageLoadError,
     hasMoreMessages,
     loadingMessages,
+    readCursors,
   } = state;
 
   const {
@@ -169,6 +170,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     // State
     room,
     messages,
+    readCursors,
     error,
     loading,
     connected,

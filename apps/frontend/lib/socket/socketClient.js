@@ -148,12 +148,16 @@ export const createSocketClient = (service = socketService) => ({
     }),
   leaveRoom: (roomId, socket) => sendDomainEvent(service, socket, 'leaveRoom', roomId),
   tryLeaveRoom: (roomId, socket) => service.trySendOn(socket, 'leaveRoom', roomId),
-  markMessagesAsRead: (messageIds, socket) => {
-    if (!Array.isArray(messageIds)) {
-      throw new Error('messageIds must be an array');
+  markMessagesAsRead: (roomId, lastReadMessageId, socket) => {
+    if (typeof roomId !== 'string' || roomId.length === 0) {
+      throw new Error('roomId must be a non-empty string');
+    }
+    if (typeof lastReadMessageId !== 'string' || lastReadMessageId.length === 0) {
+      throw new Error('lastReadMessageId must be a non-empty string');
     }
 
-    return sendDomainEvent(service, socket, 'markMessagesAsRead', { messageIds });
+    // timestamp는 클라가 정하지 않는다. 서버가 이 메시지의 서버 timestamp로 커서를 전진시킨다.
+    return sendDomainEvent(service, socket, 'markMessagesAsRead', { roomId, lastReadMessageId });
   },
   sendMessageReaction: (messageId, reaction, type, socket) => sendDomainEvent(service, socket, 'messageReaction', {
     messageId,

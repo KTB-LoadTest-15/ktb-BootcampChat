@@ -108,7 +108,6 @@ public class RoomLeaveHandler {
             systemMessage.setTimestamp(LocalDateTime.now());
             systemMessage.setMentions(new ArrayList<>());
             systemMessage.setReactions(new HashMap<>());
-            systemMessage.setReaders(new ArrayList<>());
             systemMessage.setMetadata(new HashMap<>());
 
             Message savedMessage = messageStore.add(systemMessage);

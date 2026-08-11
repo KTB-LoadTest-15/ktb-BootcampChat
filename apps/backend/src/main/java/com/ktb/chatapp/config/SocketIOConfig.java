@@ -114,4 +114,19 @@ public class SocketIOConfig {
             return t;
         });
     }
+
+    /**
+     * 읽음 커서 브로드캐스트 coalescing 창을 만료시키는 단일 데몬 스케줄러.
+     *
+     * <p>방마다 창당 flush 1건을 예약하는 가벼운 작업이라 단일 데몬 스레드로 충분하다.
+     */
+    @Bean(destroyMethod = "shutdownNow")
+    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
+    public java.util.concurrent.ScheduledExecutorService readReceiptScheduler() {
+        return java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "read-receipt-coalesce");
+            t.setDaemon(true);
+            return t;
+        });
+    }
 }

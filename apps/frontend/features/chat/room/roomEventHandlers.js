@@ -36,24 +36,32 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
-      return msg;
-    }
+/**
+ * 읽음 커서 맵을 단조 병합한다. read cursor 방식.
+ *
+ * <p>메시지 배열을 O(n) 재생성하던 방식(applyReadReceipts)을 대체한다. 방에 N명이 있어도
+ * 읽음 이벤트당 커서 맵의 한 칸만 갱신하며, 역행/중복이면 동일 참조를 반환해 리렌더를 막는다.
+ */
+export const mergeReadCursor = (cursors, { userId, lastReadTs }) => {
+  if (!userId || typeof lastReadTs !== 'number') {
+    return cursors;
+  }
+  const current = cursors?.[userId];
+  if (current !== undefined && current >= lastReadTs) {
+    return cursors;
+  }
+  return { ...cursors, [userId]: lastReadTs };
+};
 
-    const alreadyRead = msg.readers?.some(reader =>
-      reader.userId === userId || reader._id === userId
-    );
-    if (alreadyRead) {
-      return msg;
-    }
-
-    return {
-      ...msg,
-      readers: [...(msg.readers || []), { userId, readAt: timestamp || new Date() }],
-    };
-  });
+/** 커서 맵 전체를 단조 병합한다(입장 시 seed·재입장 시 로컬 진행 보존). */
+export const mergeReadCursorMap = (cursors, incoming) => {
+  if (!incoming) return cursors || {};
+  let next = cursors || {};
+  for (const [userId, lastReadTs] of Object.entries(incoming)) {
+    next = mergeReadCursor(next, { userId, lastReadTs });
+  }
+  return next;
+};
 
 export const appendIncomingMessage = (messages, incoming) => {
   if (!incoming?._id) {
@@ -75,6 +83,7 @@ export const createRoomEventHandlers = ({
   processMessages,
   setRoom,
   setMessages,
+  setReadCursors,
   setLoadingMessages,
   setError,
   setHasMoreMessages,
@@ -110,8 +119,8 @@ export const createRoomEventHandlers = ({
       setRoom(prev => ({ ...prev, participants: participants || [] }));
     },
     onMessagesRead: (payload) => {
-      if (!mountedRef.current) return;
-      setMessages(prev => applyReadReceipts(prev, payload));
+      if (!mountedRef.current || !payload?.cursors) return;
+      setReadCursors(prev => mergeReadCursorMap(prev, payload.cursors));
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
