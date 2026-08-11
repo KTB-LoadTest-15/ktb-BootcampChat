@@ -1,5 +1,6 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
+import com.corundumstudio.socketio.BroadcastOperations;
 import com.corundumstudio.socketio.HandshakeData;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
@@ -55,9 +56,11 @@ class ConnectionLoginHandlerTest {
 
     @Test
     void onConnect_setsUserRejoinsRoomsStoresUserAndJoinsUserRooms() {
+        UUID sid = UUID.randomUUID();
         SocketUser user = new SocketUser("user-1", "tester", "session-1", "socket-1");
         when(connectedUsers.get(user.id())).thenReturn(null);
         when(client.get("user")).thenReturn(user);
+        when(client.getSessionId()).thenReturn(sid);
         when(userRooms.get(user.id())).thenReturn(Set.of("room-1", "room-2"));
 
         handler.onConnect(client, user);
@@ -66,7 +69,8 @@ class ConnectionLoginHandlerTest {
         verify(roomJoinHandler).handleJoinRoom(client, "room-1");
         verify(roomJoinHandler).handleJoinRoom(client, "room-2");
         verify(connectedUsers).set(user.id(), user);
-        verify(client).joinRooms(Set.of("user:" + user.id(), "room-list"));
+        // user/room-list 룸 + 자신의 socket:{id} 룸(크로스노드 타깃 전송용)에 조인
+        verify(client).joinRooms(Set.of("user:" + user.id(), "room-list", "socket:" + sid));
     }
 
     @Test
@@ -74,11 +78,14 @@ class ConnectionLoginHandlerTest {
         UUID existingSocketId = UUID.randomUUID();
         SocketUser existingUser =
                 new SocketUser("user-1", "tester", "session-old", existingSocketId.toString());
-        SocketIOClient existingClient = mock(SocketIOClient.class);
+        // 기존 소켓은 socket:{id} 룸으로 타깃한다(다른 노드에 있어도 RedissonStoreFactory가 fan-out).
+        String targetRoom = "socket:" + existingSocketId;
+        BroadcastOperations targetOps = mock(BroadcastOperations.class);
         when(connectedUsers.get("user-1")).thenReturn(existingUser);
-        when(socketIOServer.getClient(existingSocketId)).thenReturn(existingClient);
+        when(socketIOServer.getRoomOperations(targetRoom)).thenReturn(targetOps);
 
-        // 새 접속 클라이언트의 handshake 정보(DUPLICATE_LOGIN payload용)
+        // 새 접속 클라이언트의 handshake 정보(DUPLICATE_LOGIN payload용) + 자신의 소켓 id
+        when(client.getSessionId()).thenReturn(UUID.randomUUID());
         HandshakeData handshake = mock(HandshakeData.class);
         HttpHeaders headers = mock(HttpHeaders.class);
         when(client.getHandshakeData()).thenReturn(handshake);
@@ -97,10 +104,10 @@ class ConnectionLoginHandlerTest {
         SocketUser newUser = new SocketUser("user-1", "tester", "session-new", "socket-new");
         handler.onConnect(client, newUser);
 
-        // 기존 클라이언트에 즉시 중복 로그인 통지 + (스케줄러 경유) 유예 종료 통지
-        verify(existingClient).sendEvent(eq(DUPLICATE_LOGIN), any());
+        // 기존 소켓 룸에 즉시 중복 로그인 통지 + (스케줄러 경유) 유예 종료 통지
+        verify(targetOps).sendEvent(eq(DUPLICATE_LOGIN), any());
         verify(duplicateLoginScheduler).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
-        verify(existingClient).sendEvent(eq(SESSION_ENDED), any());
+        verify(targetOps).sendEvent(eq(SESSION_ENDED), any());
     }
 
     @Test
@@ -116,7 +123,7 @@ class ConnectionLoginHandlerTest {
 
         verify(roomLeaveHandler).handleLeaveRoom(client, "room-1");
         verify(connectedUsers).del(user.id());
-        verify(client).leaveRooms(Set.of("user:" + user.id(), "room-list"));
+        verify(client).leaveRooms(Set.of("user:" + user.id(), "room-list", "socket:" + socketId));
         verify(client).del("user");
         verify(client).disconnect();
     }
