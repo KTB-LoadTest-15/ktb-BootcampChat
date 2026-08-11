@@ -38,6 +38,7 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 | P1-7 | 중복 로그인 유예 종료 | 접속마다 raw Thread(10s) | 공유 스케줄러 예약 | 스레드 수 접속비례→상수(정성적) | [P1-7-duplicate-login-scheduler.md](P1-7-duplicate-login-scheduler.md) |
 | D5 | chatMessage 처리 위치 | event-loop 스레드(동기 블로킹) | 키드 워커 오프로드(방 FIFO) | event-loop 점유 제거·순서보장·포화 백프레셔 | [D5-eventloop-offload-chatmessage.md](D5-eventloop-offload-chatmessage.md) |
 | D5 | 소켓 TCP_NODELAY | Nagle on (tcpNoDelay=false) | Nagle off (true) | 소형 빈번 프레임 전송 지연 제거 | [socket-tcp-nodelay.md](socket-tcp-nodelay.md) |
+| D5 | **실부하 A/B (1000 동접)** | 평균연결 16,812ms·auth실패 173·828접속 | 평균연결 129ms·auth실패 0·전원접속·throughput +39% | 오프로드 종단 검증(연결 붕괴 구제) | [D5-eventloop-offload-loadtest.md](D5-eventloop-offload-loadtest.md) |
 
 ## Baseline (전환 전 기준선)
 
