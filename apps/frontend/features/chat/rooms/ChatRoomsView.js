@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { ErrorCircleIcon, NetworkIcon, RefreshOutlineIcon } from '@vapor-ui/icons';
 import { Button, Text, Badge, Callout, Box, VStack, HStack, Spinner } from '@vapor-ui/core';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,7 +19,19 @@ const STATUS_CONFIG = {
   [CONNECTION_STATUS.ERROR]: { label: "연결 오류", color: "danger" },
 };
 
-const ROOM_LIST_REFRESH_INTERVAL = 30000;
+export const ROOM_LIST_REFRESH_INTERVAL = 2 * 60 * 1000;
+export const ROOM_LIST_STALE_AFTER_MS = ROOM_LIST_REFRESH_INTERVAL;
+export const ROOM_LIST_MAX_BACKOFF_MS = 10 * 60 * 1000;
+export const ROOM_LIST_POLL_JITTER_MS = 30 * 1000;
+
+export const getRoomListPollDelay = (failureCount, random = Math.random) => {
+  const backoffDelay = Math.min(
+    ROOM_LIST_REFRESH_INTERVAL * Math.pow(2, failureCount),
+    ROOM_LIST_MAX_BACKOFF_MS
+  );
+
+  return backoffDelay + Math.floor(random() * ROOM_LIST_POLL_JITTER_MS);
+};
 
 const LoadingIndicator = ({ text }) => (
   <HStack $css={{ gap: '$200', justifyContent: 'center', alignItems: 'center' }}>
@@ -35,8 +47,6 @@ export default function ChatRoomsView({ router }) {
   const {
     connectionStatus,
     setConnectionStatus,
-    isRetrying,
-    attemptConnection,
   } = useServerConnection();
 
   const {
@@ -54,11 +64,8 @@ export default function ChatRoomsView({ router }) {
     router,
     connectionStatus,
     setConnectionStatus,
-    isRetrying,
-    attemptConnection,
   });
 
-  const connectionCheckTimerRef = useRef(null);
   const initialFetchStartedRef = useRef(false);
   const refreshRoomsRef = useRef(refreshRooms);
 
@@ -76,65 +83,82 @@ export default function ChatRoomsView({ router }) {
 
     initialFetchStartedRef.current = true;
 
-    let retryTimer = null;
-    let cancelled = false;
-
-    const initFetch = async () => {
-      try {
-        await fetchRooms();
-      } catch (error) {
-        retryTimer = setTimeout(() => {
-          if (!cancelled) {
-            fetchRooms();
-          }
-        }, 3000);
-      }
-    };
-
-    initFetch();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-      }
-    };
+    fetchRooms();
   }, [currentUserKey, fetchRooms]);
 
-  useEffect(() => {
-    if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CHECKING) return;
-
-    connectionCheckTimerRef.current = setInterval(() => {
-      attemptConnection();
-    }, 5000);
-
-    return () => {
-      if (connectionCheckTimerRef.current) {
-        clearInterval(connectionCheckTimerRef.current);
-      }
-    };
-  }, [currentUserKey, connectionStatus, attemptConnection]);
+  const refreshAfterReconnect = useCallback(() => {
+    return refreshRoomsRef.current({
+      silent: true,
+      maxRetries: 0,
+    });
+  }, []);
 
   // 활성도 지표는 소켓 이벤트만으로 만료를 알 수 없어 주기적으로 다시 조회한다.
-  // 보이지 않는 탭에서는 갱신을 멈추고, 다시 보일 때 즉시 한 번 따라잡는다.
+  // 보이지 않는 탭에서는 갱신을 멈추고, 실패 시 다음 조회를 지수 백오프한다.
   useEffect(() => {
     if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CONNECTED) return;
 
-    const refreshWhenVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      refreshRoomsRef.current({ silent: true });
+    let cancelled = false;
+    let refreshTimer = null;
+    let failureCount = 0;
+
+    const scheduleNextRefresh = () => {
+      if (cancelled) return;
+
+      refreshTimer = setTimeout(
+        runScheduledRefresh,
+        getRoomListPollDelay(failureCount)
+      );
     };
 
-    const refreshTimer = setInterval(refreshWhenVisible, ROOM_LIST_REFRESH_INTERVAL);
+    const runScheduledRefresh = async () => {
+      if (cancelled) return;
+
+      if (document.visibilityState !== 'visible') {
+        scheduleNextRefresh();
+        return;
+      }
+
+      const succeeded = await refreshRoomsRef.current({
+        silent: true,
+        staleAfterMs: ROOM_LIST_STALE_AFTER_MS,
+        maxRetries: 0,
+      });
+
+      if (cancelled) return;
+
+      failureCount = succeeded ? 0 : failureCount + 1;
+      scheduleNextRefresh();
+    };
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      refreshRoomsRef.current({
+        silent: true,
+        staleAfterMs: ROOM_LIST_STALE_AFTER_MS,
+        maxRetries: 0,
+      });
+    };
+
+    scheduleNextRefresh();
     document.addEventListener('visibilitychange', refreshWhenVisible);
 
     return () => {
-      clearInterval(refreshTimer);
+      cancelled = true;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+      }
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [currentUserKey, connectionStatus]);
 
-  useRoomsSocket({ currentUser, setConnectionStatus, setRooms });
+  useRoomsSocket({
+    currentUser,
+    setConnectionStatus,
+    setRooms,
+    onReconnect: refreshAfterReconnect,
+  });
 
   return (
     <Box
@@ -171,7 +195,7 @@ export default function ChatRoomsView({ router }) {
                   variant="outline"
                   size="sm"
                   onClick={() => fetchRooms()}
-                  disabled={isRetrying}
+                  disabled={loading || refreshing}
                 >
                   <RefreshOutlineIcon size={16} />
                   재연결
@@ -208,7 +232,7 @@ export default function ChatRoomsView({ router }) {
               <VStack $css={{ gap: '$150', alignItems: 'flex-start' }}>
                 <Text typography="subtitle2" style={{ fontWeight: 500 }}>{error.title}</Text>
                 <Text typography="body2">{error.message}</Text>
-                {error.showRetry && !isRetrying && (
+                {error.showRetry && (
                   <Button
                     variant="outline"
                     size="sm"
