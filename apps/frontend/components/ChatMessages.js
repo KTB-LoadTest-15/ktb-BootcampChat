@@ -63,6 +63,8 @@ const ChatMessages = ({
   messages = [],
   currentUser = null,
   room = null,
+  readCursors = {},
+  roomId = null,
   loadingMessages = false,
   hasMoreMessages = true,
   onReactionAdd = () => {},
@@ -85,7 +87,7 @@ const ChatMessages = ({
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
   );
-  const queueReadReceipt = useReadReceiptBatch();
+  const queueReadReceipt = useReadReceiptBatch({ roomId: roomId || room?._id || room?.id });
 
   const isMine = useCallback((msg) => {
     if (!msg?.sender || !currentUserId) return false;
@@ -154,6 +156,7 @@ const ChatMessages = ({
     const commonProps = {
       currentUser,
       room,
+      cursors: readCursors,
       onReactionAdd,
       onReactionRemove,
       onMessageRead: queueReadReceipt,
@@ -173,7 +176,7 @@ const ChatMessages = ({
         isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
       />
     );
-  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove, queueReadReceipt]);
+  }, [currentUser, room, readCursors, isMine, onReactionAdd, onReactionRemove, queueReadReceipt]);
 
   const renderedMessages = isVirtualized ? (
     <div

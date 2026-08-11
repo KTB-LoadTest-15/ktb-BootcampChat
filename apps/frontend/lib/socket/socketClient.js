@@ -148,12 +148,15 @@ export const createSocketClient = (service = socketService) => ({
     }),
   leaveRoom: (roomId, socket) => sendDomainEvent(service, socket, 'leaveRoom', roomId),
   tryLeaveRoom: (roomId, socket) => service.trySendOn(socket, 'leaveRoom', roomId),
-  markMessagesAsRead: (messageIds, socket) => {
-    if (!Array.isArray(messageIds)) {
-      throw new Error('messageIds must be an array');
+  markMessagesAsRead: (roomId, lastReadTs, socket) => {
+    if (typeof roomId !== 'string' || roomId.length === 0) {
+      throw new Error('roomId must be a non-empty string');
+    }
+    if (typeof lastReadTs !== 'number' || !Number.isFinite(lastReadTs)) {
+      throw new Error('lastReadTs must be a finite number');
     }
 
-    return sendDomainEvent(service, socket, 'markMessagesAsRead', { messageIds });
+    return sendDomainEvent(service, socket, 'markMessagesAsRead', { roomId, lastReadTs });
   },
   sendMessageReaction: (messageId, reaction, type, socket) => sendDomainEvent(service, socket, 'messageReaction', {
     messageId,

@@ -107,7 +107,7 @@ describe('socketClient', () => {
     client.fetchPreviousMessages({ roomId: 'room-1', limit: 30 });
     client.joinRoom('room-1');
     client.leaveRoom('room-1');
-    client.markMessagesAsRead(['message-1']);
+    client.markMessagesAsRead('room-1', 1000);
 
     expect(service.send).toHaveBeenCalledWith('chatMessage', {
       room: 'room-1',
@@ -121,7 +121,8 @@ describe('socketClient', () => {
     expect(service.send).toHaveBeenCalledWith('joinRoom', 'room-1');
     expect(service.send).toHaveBeenCalledWith('leaveRoom', 'room-1');
     expect(service.send).toHaveBeenCalledWith('markMessagesAsRead', {
-      messageIds: ['message-1'],
+      roomId: 'room-1',
+      lastReadTs: 1000,
     });
   });
 
@@ -147,10 +148,11 @@ describe('socketClient', () => {
     };
     const client = createSocketClient(service);
 
-    client.markMessagesAsRead(['message-1'], socket);
+    client.markMessagesAsRead('room-1', 1000, socket);
 
     expect(service.sendOn).toHaveBeenCalledWith(socket, 'markMessagesAsRead', {
-      messageIds: ['message-1'],
+      roomId: 'room-1',
+      lastReadTs: 1000,
     });
     expect(service.send).not.toHaveBeenCalled();
   });
@@ -274,14 +276,17 @@ describe('socketClient', () => {
     vi.useRealTimers();
   });
 
-  it('rejects non-array message ids before marking messages as read', () => {
+  it('rejects invalid roomId or timestamp before marking messages as read', () => {
     const service = {
       send: vi.fn(),
     };
     const client = createSocketClient(service);
 
-    expect(() => client.markMessagesAsRead({ messageIds: ['message-1'] })).toThrowError(
-      'messageIds must be an array',
+    expect(() => client.markMessagesAsRead('', 1000)).toThrowError(
+      'roomId must be a non-empty string',
+    );
+    expect(() => client.markMessagesAsRead('room-1', NaN)).toThrowError(
+      'lastReadTs must be a finite number',
     );
     expect(service.send).not.toHaveBeenCalled();
   });
@@ -341,7 +346,7 @@ describe('socketClient', () => {
     const unsubscribe = client.subscribeRoomEvents(socket, handlers);
 
     socket.emitToClient('participantsUpdate', ['user-1']);
-    socket.emitToClient('messagesRead', { userId: 'user-1', messageIds: ['message-1'] });
+    socket.emitToClient('messagesRead', { userId: 'user-1', lastReadTs: 1000 });
     socket.emitToClient('message', { _id: 'message-1' });
     socket.emitToClient('previousMessagesLoaded', { messages: [], hasMore: false });
     socket.emitToClient('messageReactionUpdate', { messageId: 'message-1' });
@@ -349,7 +354,7 @@ describe('socketClient', () => {
     socket.emitToClient('error', { code: 'MESSAGE_REJECTED' });
 
     expect(handlers.onParticipantsUpdate).toHaveBeenCalledWith(['user-1']);
-    expect(handlers.onMessagesRead).toHaveBeenCalledWith({ userId: 'user-1', messageIds: ['message-1'] });
+    expect(handlers.onMessagesRead).toHaveBeenCalledWith({ userId: 'user-1', lastReadTs: 1000 });
     expect(handlers.onMessage).toHaveBeenCalledWith({ _id: 'message-1' });
     expect(handlers.onPreviousMessagesLoaded).toHaveBeenCalledWith({ messages: [], hasMore: false });
     expect(handlers.onMessageReactionUpdate).toHaveBeenCalledWith({ messageId: 'message-1' });

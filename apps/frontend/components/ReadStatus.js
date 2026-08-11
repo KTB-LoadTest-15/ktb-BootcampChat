@@ -2,10 +2,19 @@ import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react'
 import { ConfirmOutlineIcon } from '@vapor-ui/icons';
 import { Text, HStack } from '@vapor-ui/core';
 
-const ReadStatus = ({ 
+const cursorFor = (cursors, participant) => {
+  if (!cursors) return -1;
+  const byId = cursors[participant?._id];
+  if (byId !== undefined) return byId;
+  const byAltId = cursors[participant?.id];
+  return byAltId !== undefined ? byAltId : -1;
+};
+
+const ReadStatus = ({
   messageType = 'text',
   participants = [],
-  readers = [],
+  cursors = {},
+  messageTimestamp = 0,
   className = '',
   messageId = null,
   messageRef = null, // 메시지 요소의 ref 추가
@@ -16,41 +25,31 @@ const ReadStatus = ({
   const statusRef = useRef(null);
   const observerRef = useRef(null);
 
-  // 읽지 않은 참여자 명단 생성 
-  const unreadParticipants = useMemo(() => {
-    if (messageType === 'system') return [];
-    
-    return participants.filter(participant => 
-      !readers.some(reader => 
-        reader.userId === participant._id || 
-        reader.userId === participant.id
-      )
-    );
-  }, [participants, readers, messageType]);
-
-  // 읽지 않은 참여자 수 계산
+  // 읽지 않은 참여자 수: 커서(cursor[userId] < 메시지 timestamp)에서 파생.
   const unreadCount = useMemo(() => {
-    if (messageType === 'system') {
-      return 0;
-    }
-    return unreadParticipants.length;
-  }, [unreadParticipants.length, messageType]);
+    if (messageType === 'system') return 0;
+    return participants.reduce(
+      (count, participant) => (cursorFor(cursors, participant) < messageTimestamp ? count + 1 : count),
+      0
+    );
+  }, [participants, cursors, messageTimestamp, messageType]);
 
-  // 메시지를 읽음으로 표시하는 함수
-  const markMessageAsRead = useCallback(async () => {
-    if (!messageId || !currentUserId || hasMarkedAsRead || 
-        messageType === 'system') {
+  // 내가 이미 이 메시지를 읽었는지(내 커서가 메시지 timestamp 이상).
+  const alreadyReadByMe = (cursors?.[currentUserId] ?? -1) >= messageTimestamp;
+
+  // 메시지를 읽음으로 표시(뷰포트 진입 시 마지막 읽은 timestamp를 배칭 송신).
+  const markMessageAsRead = useCallback(() => {
+    if (!messageId || !currentUserId || hasMarkedAsRead || messageType === 'system') {
       return;
     }
-
     try {
-      if (onMessageRead(messageId)) {
+      if (onMessageRead(messageTimestamp)) {
         setHasMarkedAsRead(true);
       }
     } catch (error) {
       console.error('Error marking message as read:', error);
     }
-  }, [messageId, currentUserId, hasMarkedAsRead, messageType, onMessageRead]);
+  }, [messageId, currentUserId, hasMarkedAsRead, messageType, messageTimestamp, onMessageRead]);
 
   // Intersection Observer 설정
   useEffect(() => {
@@ -58,12 +57,8 @@ const ReadStatus = ({
       return;
     }
 
-    // 이미 읽은 메시지인지 확인
-    const isAlreadyRead = readers.some(reader => 
-      reader.userId === currentUserId
-    );
-
-    if (isAlreadyRead) {
+    // 이미 내 커서가 이 메시지를 덮으면 재전송 불필요.
+    if (alreadyReadByMe) {
       setHasMarkedAsRead(true);
       return;
     }
@@ -90,7 +85,7 @@ const ReadStatus = ({
         observerRef.current.disconnect();
       }
     };
-  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, readers, markMessageAsRead]);
+  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, alreadyReadByMe, markMessageAsRead]);
 
   // 시스템 메시지는 읽음 상태 표시 안 함
   if (messageType === 'system') {

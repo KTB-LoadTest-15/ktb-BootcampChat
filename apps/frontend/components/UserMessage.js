@@ -6,9 +6,10 @@ import CustomAvatar from './CustomAvatar';
 import ReadStatus from './ReadStatus';
 
 const UserMessage = ({
-  msg = {}, 
-  isMine = false, 
+  msg = {},
+  isMine = false,
   currentUser = null,
+  cursors = {},
   onReactionAdd,
   onReactionRemove,
   onMessageRead,
@@ -84,7 +85,8 @@ const UserMessage = ({
             <ReadStatus
               messageType={msg.type}
               participants={room?.participants || []}
-              readers={msg.readers || []}
+              cursors={cursors}
+              messageTimestamp={msg.timestamp}
               messageId={msg._id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}

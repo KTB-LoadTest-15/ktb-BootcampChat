@@ -21,13 +21,15 @@ describe('useReadReceiptBatch', () => {
     vi.useRealTimers();
   });
 
-  it('deduplicates message IDs and sends them in one batch', () => {
-    const { result } = renderHook(() => useReadReceiptBatch({ delayMs: 200 }));
+  it('batches the max read timestamp and sends it once with roomId', () => {
+    const { result } = renderHook(() =>
+      useReadReceiptBatch({ roomId: 'room-1', delayMs: 200 })
+    );
 
     act(() => {
-      expect(result.current('message-1')).toBe(true);
-      expect(result.current('message-2')).toBe(true);
-      expect(result.current('message-1')).toBe(true);
+      expect(result.current(1000)).toBe(true);
+      expect(result.current(3000)).toBe(true); // 최댓값
+      expect(result.current(2000)).toBe(true);
       vi.advanceTimersByTime(199);
     });
 
@@ -38,18 +40,28 @@ describe('useReadReceiptBatch', () => {
     });
 
     expect(socketClient.markMessagesAsRead).toHaveBeenCalledTimes(1);
-    expect(socketClient.markMessagesAsRead).toHaveBeenCalledWith([
-      'message-1',
-      'message-2',
-    ]);
+    expect(socketClient.markMessagesAsRead).toHaveBeenCalledWith('room-1', 3000);
   });
 
   it('does not queue a receipt while the socket cannot send', () => {
     socketClient.canSend.mockReturnValue(false);
+    const { result } = renderHook(() =>
+      useReadReceiptBatch({ roomId: 'room-1', delayMs: 200 })
+    );
+
+    act(() => {
+      expect(result.current(1000)).toBe(false);
+      vi.runAllTimers();
+    });
+
+    expect(socketClient.markMessagesAsRead).not.toHaveBeenCalled();
+  });
+
+  it('does not send when no roomId is available', () => {
     const { result } = renderHook(() => useReadReceiptBatch({ delayMs: 200 }));
 
     act(() => {
-      expect(result.current('message-1')).toBe(false);
+      expect(result.current(1000)).toBe(true);
       vi.runAllTimers();
     });
 
@@ -58,11 +70,11 @@ describe('useReadReceiptBatch', () => {
 
   it('discards pending receipts when the message list unmounts', () => {
     const { result, unmount } = renderHook(() =>
-      useReadReceiptBatch({ delayMs: 200 })
+      useReadReceiptBatch({ roomId: 'room-1', delayMs: 200 })
     );
 
     act(() => {
-      result.current('message-1');
+      result.current(1000);
     });
     unmount();
 
