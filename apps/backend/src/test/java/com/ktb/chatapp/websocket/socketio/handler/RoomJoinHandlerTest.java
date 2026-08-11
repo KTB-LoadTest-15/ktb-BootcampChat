@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -118,6 +119,7 @@ class RoomJoinHandlerTest {
 
         handler.handleJoinRoom(client, "room-1");
 
+        verify(roomRepository, times(1)).findById("room-1");
         verify(roomRepository).addParticipant("room-1", "user-1");
         verify(client).joinRoom("room-1");
         verify(userRooms).add("user-1", "room-1");
@@ -150,6 +152,7 @@ class RoomJoinHandlerTest {
 
         handler.handleJoinRoom(client, "room-1");
 
+        verify(roomRepository, times(1)).findById("room-1");
         // 본인에게 히스토리 응답 + 소켓 재구독
         verify(client).joinRoom("room-1");
         verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());

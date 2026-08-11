@@ -75,7 +75,8 @@ public class RoomJoinHandler {
                 return;
             }
             
-            if (roomRepository.findById(roomId).isEmpty()) {
+            Room room = roomRepository.findById(roomId).orElse(null);
+            if (room == null) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
@@ -86,13 +87,17 @@ public class RoomJoinHandler {
             if (userRooms.isInRoom(userId, roomId)) {
                 log.debug("User {} re-joining room {} (already a member) — silent", userId, roomId);
                 client.joinRoom(roomId);
-                buildJoinSuccessResponse(roomId, userId).ifPresentOrElse(
-                        resp -> client.sendEvent(JOIN_ROOM_SUCCESS, resp),
-                        () -> client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다.")));
+                client.sendEvent(JOIN_ROOM_SUCCESS, buildJoinSuccessResponse(room, userId));
                 return;
             }
 
             roomRepository.addParticipant(roomId, userId);
+            // $addToSet 결과를 다시 읽지 않고 최초 조회한 aggregate에도 같은 변경을 반영한다.
+            // roomId 단위 dispatcher가 이 흐름을 직렬화하므로 응답에 사용할 참가자 상태와 DB 쓰기가
+            // 같은 순서를 유지하며, 방 입장당 두 번째 findById 왕복을 제거할 수 있다.
+            if (room.getParticipantIds() == null || !room.getParticipantIds().contains(userId)) {
+                room.addParticipant(userId);
+            }
 
             // Join socket room and add to user's room set
             client.joinRoom(roomId);
@@ -110,13 +115,8 @@ public class RoomJoinHandler {
 
             joinMessage = messageStore.add(joinMessage);
 
-            // 응답(히스토리·참가자·읽음커서) 구성 — addParticipant 반영된 최신 상태로.
-            Optional<JoinRoomSuccessResponse> responseOpt = buildJoinSuccessResponse(roomId, userId);
-            if (responseOpt.isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
-                return;
-            }
-            JoinRoomSuccessResponse response = responseOpt.get();
+            // 응답(히스토리·참가자·읽음커서)은 최초 조회한 Room을 재사용한다.
+            JoinRoomSuccessResponse response = buildJoinSuccessResponse(room, userId);
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
 
@@ -141,19 +141,15 @@ public class RoomJoinHandler {
     
     /**
      * 입장 응답(초기 메시지 30건 + 참가자 목록 + 읽음커서)을 구성한다. 최초 입장과 조용한 재조인이
-     * 공유한다. 방이 없으면 empty. 브로드캐스트/DB 쓰기 없이 조회만 한다(호출부가 본인에게만 전송).
+     * 공유한다. 호출부가 확인한 Room aggregate를 재사용해 방을 다시 조회하지 않는다.
      */
-    private Optional<JoinRoomSuccessResponse> buildJoinSuccessResponse(String roomId, String userId) {
-        Optional<Room> roomOpt = roomRepository.findById(roomId);
-        if (roomOpt.isEmpty()) {
-            return Optional.empty();
-        }
-
+    private JoinRoomSuccessResponse buildJoinSuccessResponse(Room room, String userId) {
+        String roomId = room.getId();
         FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
         FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
 
         // 참가자 정보 조회 — id 목록을 한 번의 조회로 일괄 해소(참가자당 findById N+1 제거).
-        var participantIds = roomOpt.get().getParticipantIds();
+        var participantIds = room.getParticipantIds();
         Map<String, User> participantsById = userBatchLoader.findByIds(participantIds);
         List<UserResponse> participants = participantIds.stream()
                 .map(participantsById::get)
@@ -161,14 +157,14 @@ public class RoomJoinHandler {
                 .map(UserResponse::from)
                 .toList();
 
-        return Optional.of(JoinRoomSuccessResponse.builder()
+        return JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
                 .participants(participants)
                 .messages(messageLoadResult.getMessages())
                 .hasMore(messageLoadResult.isHasMore())
                 .activeStreams(Collections.emptyList())
                 .readCursors(readCursorStore.findByRoom(roomId))
-                .build());
+                .build();
     }
 
     // 순서 보장 key: 방이 있으면 roomId(방 단위 FIFO), 없으면 연결 세션 id.
