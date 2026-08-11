@@ -10,6 +10,7 @@ import LoginPage from './index';
  * History API로 정규화한다.
  */
 const LoginCompatibilityPage = (props) => {
+  // Keep this route as a direct render so browser tests and bookmarked /login URLs share one flow.
   useEffect(() => {
     const queryString = window.location.search;
     const canonicalUrl = queryString ? `/${queryString}` : '/';
