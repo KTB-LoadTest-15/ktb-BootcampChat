@@ -174,7 +174,7 @@ const createStableSetupHarness = () => {
 
   baseHarness.unmount();
 
-  const hook = renderHook(({ messages }) =>
+  return renderHook(({ messages }) =>
     useRoomHandling({
       roomId: 'room-1',
       route,
@@ -191,8 +191,6 @@ const createStableSetupHarness = () => {
       initialProps: { messages: [] },
     }
   );
-
-  return hook;
 };
 
 describe('useRoomHandling', () => {

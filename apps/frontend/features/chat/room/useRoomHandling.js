@@ -124,11 +124,15 @@ export const useRoomHandling = ({
   ]);
 
   const handleSessionError = useCallback(async () => {
-    try {
-      if (!user) {
-        throw new Error('No user session found');
+    if (!user) {
+      if (mountedRef.current) {
+        await logout();
+        onReplace('/?redirect=' + asPath);
       }
+      return false;
+    }
 
+    try {
       await refreshToken();
       if (mountedRef.current) {
         return true;
@@ -143,35 +147,29 @@ export const useRoomHandling = ({
   }, [user, refreshToken, mountedRef, logout, onReplace, asPath]);
 
   const getReadySocket = useCallback(async () => {
-    try {
-      if (!user?.token || !user?.sessionId) {
-        throw new Error('Invalid authentication state');
-      }
-
-      if (socketRef.current?.connected) {
-        return socketRef.current;
-      }
-
-      const socket = await socketClient.connect({
-        auth: {
-          token: user.token,
-          sessionId: user.sessionId,
-        },
-      });
-      attachSocket(socket);
-
-      return socketRef.current;
-    } catch (error) {
-      if (error.message === 'Invalid authentication state') {
-        onReplace('/?error=auth_required');
-      }
-      throw error;
+    if (!user?.token || !user?.sessionId) {
+      onReplace('/?error=auth_required');
+      throw new Error('Invalid authentication state');
     }
+
+    if (socketRef.current?.connected) {
+      return socketRef.current;
+    }
+
+    const socket = await socketClient.connect({
+      auth: {
+        token: user.token,
+        sessionId: user.sessionId,
+      },
+    });
+    attachSocket(socket);
+
+    return socketRef.current;
   }, [onReplace, socketRef, attachSocket, user]);
 
   const fetchRoomData = useCallback(
     async (roomId) => {
-      try {
+      const loadRoomData = async () => {
         if (!user?.token || !user?.sessionId) {
           await handleSessionError();
           throw new Error('인증 정보가 유효하지 않습니다.');
@@ -191,7 +189,7 @@ export const useRoomHandling = ({
           if (error.response?.status === 401) {
             const refreshed = await handleSessionError();
             if (refreshed && mountedRef.current) {
-              return fetchRoomData(roomId);
+              return loadRoomData();
             }
             throw new Error('인증이 만료되었습니다.');
           }
@@ -204,9 +202,9 @@ export const useRoomHandling = ({
         }
 
         return data.data;
-      } catch (error) {
-        throw error;
-      }
+      };
+
+      return loadRoomData();
     },
     [user, mountedRef, handleSessionError]
   );
@@ -417,7 +415,7 @@ export const useRoomHandling = ({
         roomEventsUnsubscribeRef.current = null;
       }
     };
-  }, []);
+  }, [initializingRef, setupCompleteRef]);
 
   return {
     setupRoom,
