@@ -63,5 +63,6 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV NODE_ENV=production
+ENV KEEP_ALIVE_TIMEOUT=90000
 
-CMD ["node", "apps/frontend/server.js", "--keepAliveTimeout", "90000"]
+CMD ["node", "apps/frontend/server.js"]
