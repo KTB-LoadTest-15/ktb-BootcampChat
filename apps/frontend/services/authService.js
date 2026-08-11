@@ -237,6 +237,7 @@ class AuthService {
 
       const response = await api.get('/api/health', {
         timeout: HEALTH_TIMEOUT_MS,
+        maxRetries: 0,
         validateStatus: (status) => status < 500 // 5xx 에러만 실제 에러로 처리
       });
 

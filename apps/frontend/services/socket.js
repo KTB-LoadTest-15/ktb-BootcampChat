@@ -241,12 +241,9 @@ export class SocketService {
 
   handleSocketError(error) {
     if (error.type === 'TransportError') {
-      const reconnectAttempt = this.reconnect();
-      if (reconnectAttempt?.catch) {
-        reconnectAttempt.catch((reconnectError) => {
-          console.log('Socket reconnect failed:', reconnectError.message);
-        });
-      }
+      // socket.io-client의 내장 재연결을 사용한다. 여기서 별도 reconnect()를 호출하면
+      // 동일 장애에 대해 중복 연결 churn이 생겨 타임아웃 체감이 커질 수 있다.
+      console.log('Socket transport error:', error.message || 'unknown transport error');
     }
   }
 

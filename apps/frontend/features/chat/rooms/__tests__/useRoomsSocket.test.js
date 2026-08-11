@@ -136,4 +136,24 @@ describe('useRoomsSocket', () => {
 
     expect(setRooms).not.toHaveBeenCalled();
   });
+
+  it('upserts a roomUpdated payload when the room is missing from the current list', async () => {
+    const socket = createSocket();
+    const setRooms = vi.fn();
+
+    renderRoomsSocket(socket, { setRooms });
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('roomUpdated', expect.any(Function));
+    });
+
+    handlerFor(socket, 'roomUpdated')({ _id: 'room-2', name: '방2' });
+
+    const updateRooms = setRooms.mock.calls[0][0];
+
+    expect(updateRooms([{ _id: 'room-1', name: '방1' }])).toEqual([
+      { _id: 'room-2', name: '방2' },
+      { _id: 'room-1', name: '방1' },
+    ]);
+  });
 });

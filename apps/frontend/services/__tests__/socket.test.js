@@ -169,18 +169,14 @@ describe('socketService', () => {
     expect(service.connected).toBe(true);
   });
 
-  it('does not leave transport error reconnect rejections unhandled', async () => {
-    const originalReconnect = service.reconnect;
+  it('relies on socket.io built-in reconnect after a transport error', async () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
-    service.reconnect = vi.fn(() => Promise.reject(new Error('Reconnect failed')));
 
-    service.handleSocketError({ type: 'TransportError' });
+    service.handleSocketError({ type: 'TransportError', message: 'transport down' });
     await flushPromises();
 
-    expect(service.reconnect).toHaveBeenCalledTimes(1);
-    expect(consoleLog).toHaveBeenCalledWith('Socket reconnect failed:', 'Reconnect failed');
+    expect(consoleLog).toHaveBeenCalledWith('Socket transport error:', 'transport down');
 
-    service.reconnect = originalReconnect;
     consoleLog.mockRestore();
   });
 

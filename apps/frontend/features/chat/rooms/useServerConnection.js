@@ -14,11 +14,16 @@ export const useServerConnection = () => {
   const [connectionStatus, setConnectionStatus] = useState(CONNECTION_STATUS.CHECKING);
 
   const attemptConnection = useCallback(async () => {
+    if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
+      return true;
+    }
+
     try {
       setConnectionStatus(CONNECTION_STATUS.CONNECTING);
 
       const response = await axiosInstance.get('/api/health', {
         timeout: HEALTH_TIMEOUT_MS,
+        maxRetries: 0,
       });
 
       if (response?.status !== 200 || response?.data?.status !== 'ok') {
@@ -38,7 +43,7 @@ export const useServerConnection = () => {
       connectionError.originalError = error;
       throw connectionError;
     }
-  }, []);
+  }, [connectionStatus]);
 
   return {
     connectionStatus,
