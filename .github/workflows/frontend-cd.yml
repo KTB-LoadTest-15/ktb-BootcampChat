@@ -1,0 +1,243 @@
+name: Frontend CD
+
+on:
+  # main에 반영된 프론트 변경만 실제 배포 대상으로 본다.
+  push:
+    branches:
+      - main
+    paths:
+      # 이미지 빌드에 영향 주는 프론트/워크스페이스 파일을 함께 감시한다.
+      - "apps/frontend/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/frontend-cd.yml"
+  workflow_dispatch: {}
+
+# 운영 배포는 직렬화해서 동시에 두 번 돌지 않게 한다.
+concurrency:
+  group: frontend-cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # 프론트 런타임 이미지는 GHCR에 단일 이름으로 관리한다.
+  FRONTEND_IMAGE: ghcr.io/ktb-loadtest-15/ktb-bootcampchat-frontend
+
+jobs:
+  # 프로덕션 배포에 쓸 프론트 이미지를 빌드하고 push한다.
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 배포 추적과 롤백 식별을 위해 커밋 SHA 앞 12자리를 태그로 쓴다.
+      - id: tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      # 빌드 인자와 SSH 배포에 필요한 필수 설정이 없으면 초기에 실패시킨다.
+      - name: Validate deploy configuration
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SOCKET_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          BASTION_HOST: ${{ secrets.BASTION_HOST }}
+          BASTION_USER: ${{ secrets.BASTION_USER }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]; then
+            echo "::error::Repository variables FRONTEND_NEXT_PUBLIC_API_URL and FRONTEND_NEXT_PUBLIC_SOCKET_URL must be set."
+            exit 1
+          fi
+
+          if [ -z "${FRONTEND_HOSTS:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ] || [ -z "${BASTION_HOST:-}" ] || [ -z "${BASTION_USER:-}" ]; then
+            echo "::error::Secrets FRONTEND_HOSTS, SSH_PRIVATE_KEY, BASTION_HOST, and BASTION_USER must be set."
+            exit 1
+          fi
+
+      # Docker buildx를 써서 캐시 가능한 이미지 빌드를 수행한다.
+      - uses: docker/setup-buildx-action@v3
+
+      # GitHub Actions 기본 토큰으로 GHCR push 권한을 얻는다.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # NEXT_PUBLIC_* 값은 런타임이 아니라 이미지 빌드 시점에 번들에 박힌다.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SOCKET_URL=${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # 이미지가 정상 push되면 bastion을 거쳐 각 프론트 호스트에 배포한다.
+  deploy:
+    needs: build-frontend
+    if: needs.build-frontend.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # bastion과 내부 호스트의 known_hosts를 구성해 엄격한 SSH 검증을 유지한다.
+      - name: Configure SSH for bastion hop
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          BASTION_HOST: ${{ secrets.BASTION_HOST }}
+          BASTION_USER: ${{ secrets.BASTION_USER }}
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh-keyscan -H "$BASTION_HOST" >> ~/.ssh/known_hosts
+
+          cat >> ~/.ssh/config <<EOF
+          Host bastion
+            HostName $BASTION_HOST
+            User $BASTION_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          Host 10.*
+            User ubuntu
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            ProxyJump bastion
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+          for host in $FRONTEND_HOSTS; do
+            ssh bastion "ssh-keyscan -H '$host'" >> ~/.ssh/known_hosts
+          done
+
+      # 배포 전에 bastion과 각 앱 호스트까지 실제 SSH가 닿는지 먼저 확인한다.
+      - name: Test SSH connection
+        env:
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          ssh bastion "echo BASTION_OK"
+
+          for host in $FRONTEND_HOSTS; do
+            echo "Testing $host"
+            ssh "$host" "echo FRONTEND_OK && hostname"
+          done
+
+      # GHCR 패키지가 private이면 대상 호스트에서 선행 docker login이 필요하다.
+      - name: Optional GHCR login on target hosts
+        env:
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GHCR_USERNAME:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
+            echo "GHCR credentials not configured. Assuming the package is public."
+            exit 0
+          fi
+
+          for host in $FRONTEND_HOSTS; do
+            printf '%s' "$GHCR_TOKEN" | ssh "$host" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          done
+
+      # 각 호스트에 제어 스크립트를 올리고 병렬로 새 이미지를 롤아웃한다.
+      - name: Upload deploy script and roll out new image
+        env:
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+          IMAGE_REF: ${{ env.FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.tag }}
+        run: |
+          set -euo pipefail
+          pids=""
+          result_dir="$(mktemp -d)"
+          trap 'rm -rf "$result_dir"' EXIT
+
+          for host in $FRONTEND_HOSTS; do
+            (
+              if ssh "$host" "mkdir -p ~/ktb-chat-frontend" &&
+                scp apps/frontend/docker-control.sh "$host:~/ktb-chat-frontend/docker-control.sh" &&
+                ssh "$host" "chmod +x ~/ktb-chat-frontend/docker-control.sh && cd ~/ktb-chat-frontend && IMAGE_REF=$IMAGE_REF ./docker-control.sh deploy"; then
+                echo "success" > "$result_dir/$host"
+              else
+                echo "failed" > "$result_dir/$host"
+                exit 1
+              fi
+            ) &
+            pids="$pids $!"
+          done
+
+          fail=0
+          for pid in $pids; do
+            wait "$pid" || fail=1
+          done
+
+          total=0
+          success_hosts=""
+          failed_hosts=""
+          for host in $FRONTEND_HOSTS; do
+            total=$((total + 1))
+            if [ -f "$result_dir/$host" ] && [ "$(cat "$result_dir/$host")" = "success" ]; then
+              success_hosts="$success_hosts $host"
+            else
+              failed_hosts="$failed_hosts $host"
+            fi
+          done
+
+          success_count=0
+          failed_count=0
+          for _ in $success_hosts; do
+            success_count=$((success_count + 1))
+          done
+          for _ in $failed_hosts; do
+            failed_count=$((failed_count + 1))
+          done
+
+          echo "배포 요약: 전체=$total 성공=$success_count 실패=$failed_count"
+          if [ -n "$success_hosts" ]; then
+            echo "배포 성공 호스트:$success_hosts"
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "배포 실패 호스트:$failed_hosts"
+            if [ -n "$success_hosts" ]; then
+              echo "성공 호스트 자동 롤백 시작:$success_hosts"
+              rollback_fail=0
+              for host in $success_hosts; do
+                if ! ssh "$host" "cd ~/ktb-chat-frontend && ./docker-control.sh rollback"; then
+                  rollback_fail=1
+                  echo "::error::롤백 실패 호스트:$host"
+                fi
+              done
+              if [ "$rollback_fail" -eq 1 ]; then
+                echo "::error::성공 호스트 중 일부 롤백이 실패했습니다."
+              fi
+            fi
+            echo "::error::다음 호스트에서 배포 또는 헬스체크가 실패했습니다:$failed_hosts"
+            exit 1
+          fi
