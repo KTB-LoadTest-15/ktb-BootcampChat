@@ -81,10 +81,12 @@ jobs:
             HostName $BASTION_HOST
             User $BASTION_USER
             IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
             StrictHostKeyChecking yes
-          Host *
+          Host 10.*
             User ubuntu
             IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
             ProxyJump bastion
             StrictHostKeyChecking yes
           EOF
@@ -92,6 +94,19 @@ jobs:
 
           for host in $BACKEND_HOSTS; do
             ssh bastion "ssh-keyscan -H '$host'" >> ~/.ssh/known_hosts
+          done
+
+      - name: Test SSH connection
+        env:
+          BACKEND_HOSTS: ${{ secrets.BACKEND_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          ssh bastion "echo BASTION_OK"
+
+          for host in $BACKEND_HOSTS; do
+            echo "Testing $host"
+            ssh "$host" "echo BACKEND_OK && hostname"
           done
 
       - name: Write backend .env to target hosts
