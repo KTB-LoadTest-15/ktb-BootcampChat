@@ -47,6 +47,7 @@ export default function ChatRoomsView({ router }) {
   const {
     connectionStatus,
     setConnectionStatus,
+    attemptConnection,
   } = useServerConnection();
 
   const {
@@ -67,6 +68,7 @@ export default function ChatRoomsView({ router }) {
     router,
     connectionStatus,
     setConnectionStatus,
+    attemptConnection,
   });
 
   const initialFetchStartedRef = useRef(false);

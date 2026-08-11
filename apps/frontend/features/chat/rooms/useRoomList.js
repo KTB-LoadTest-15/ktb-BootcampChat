@@ -75,6 +75,7 @@ export const useRoomList = ({
   router,
   connectionStatus,
   setConnectionStatus,
+  attemptConnection,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);
@@ -195,6 +196,7 @@ export const useRoomList = ({
       setLoading(true);
       setError(null);
 
+      await attemptConnection();
       await loadRooms();
 
       if (isInitialLoad) {
@@ -208,7 +210,7 @@ export const useRoomList = ({
     } finally {
       setLoading(false);
     }
-  }, [currentUser, isInitialLoad, loadRooms, handleFetchError]);
+  }, [currentUser, isInitialLoad, attemptConnection, loadRooms, handleFetchError]);
 
   /**
    * 이미 그려진 목록을 유지한 채 다시 조회한다.

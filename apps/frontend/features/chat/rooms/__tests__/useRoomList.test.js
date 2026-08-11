@@ -16,6 +16,7 @@ const roomsResponse = (rooms) => ({ data: { data: rooms } });
 const renderRoomList = ({
   router = { push: vi.fn() },
   connectionStatus = CONNECTION_STATUS.CONNECTED,
+  attemptConnection = vi.fn(() => Promise.resolve(true)),
 } = {}) =>
   renderHook(() =>
     useRoomList({
@@ -23,6 +24,7 @@ const renderRoomList = ({
       router,
       connectionStatus,
       setConnectionStatus: vi.fn(),
+      attemptConnection,
     })
   );
 

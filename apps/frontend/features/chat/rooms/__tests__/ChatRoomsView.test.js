@@ -32,6 +32,7 @@ vi.mock('../useServerConnection', async () => {
     useServerConnection: () => ({
       connectionStatus: mocks.connectionStatus,
       setConnectionStatus: vi.fn(),
+      attemptConnection: vi.fn(() => Promise.resolve(true)),
     }),
   };
 });
