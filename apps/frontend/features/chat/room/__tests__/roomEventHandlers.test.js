@@ -144,7 +144,7 @@ describe('roomEventHandlers', () => {
     });
 
     handlers.onParticipantsUpdate([{ _id: 'user-1' }]);
-    handlers.onMessagesRead({ userId: 'user-1', lastReadTs: 1000 });
+    handlers.onMessagesRead({ cursors: { 'user-1': 1000 } });
     handlers.onMessage({ _id: 'message-1' });
     handlers.onPreviousMessagesLoaded({ messages: [{ _id: 'message-2' }], hasMore: true });
     handlers.onMessageReactionUpdate({ messageId: 'message-1' });

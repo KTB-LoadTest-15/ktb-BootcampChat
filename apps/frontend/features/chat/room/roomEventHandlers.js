@@ -119,8 +119,8 @@ export const createRoomEventHandlers = ({
       setRoom(prev => ({ ...prev, participants: participants || [] }));
     },
     onMessagesRead: (payload) => {
-      if (!mountedRef.current || !payload) return;
-      setReadCursors(prev => mergeReadCursor(prev, payload));
+      if (!mountedRef.current || !payload?.cursors) return;
+      setReadCursors(prev => mergeReadCursorMap(prev, payload.cursors));
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;

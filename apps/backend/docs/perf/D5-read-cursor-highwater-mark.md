@@ -41,7 +41,8 @@ Redis:  readcursor:{roomId} 해시(field=userId → epoch millis), roomId 레인
 | 읽음 처리 쓰기 | 읽은 메시지 수 N (Redis는 JSON 전체 재직렬화) | **1** (`findAndModify` upsert + `$max`) |
 | 메시지 로드 시 읽음 쓰기 | 로드 배치(30개) bulk update 1 | **0** (프론트 커서로 이관) |
 | 수신측 프론트 비용 | 이벤트당 O(전체 메시지) 배열 재생성 + 재정렬 | **O(1)** 커서 맵 병합 |
-| broadcast payload | `{userId, messageIds[]}` | `{userId, lastReadTs}` (상수) |
+| broadcast payload | `{userId, messageIds[]}` | `{cursors: {userId: lastReadTs}}` (상수) |
+| broadcast 횟수 | 읽음 emit당 1회 (방 N명 동시 읽음 → N² 전송) | **방 단위 창당 1회** (A4 coalescing, N² → N) |
 
 핵심: 읽음 1건의 상태 반영이 `3 + N`개 명령에서 **조회 1 + upsert 1**로, 프론트 수신은 O(n)에서 O(1)로 줄었다. N² 팬아웃의 각 이벤트 단가가 상수화되어 부하 구간에서 Mongo/Redis와 브라우저 메인스레드 부담이 동시에 감소한다. (`ReadCursorQueryCountIntegrationTest`는 커서 저장소 `advance`=`findAndModify` 1회를 측정; 핸들러의 `findById`는 서버 timestamp 확보와 방 검증을 겸한다.)
 
@@ -54,8 +55,11 @@ Redis:  readcursor:{roomId} 해시(field=userId → epoch millis), roomId 레인
 - **기존 `readers[]` 미이관**(새로 시작). 기존 메시지는 재조회/스크롤 시 커서로 다시 읽음 처리. `Message.readers` 필드·`MessageReader`는 제거했고, Redis 구버전 JSON 호환을 위해 `MessageCodec`에 `FAIL_ON_UNKNOWN_PROPERTIES=false`를 켰다.
 - `addReaderToMessages`/`updateReadersForMessages`/`MessageReadStatusService`는 제거.
 
-## 5. 남은 항목
+## 5. A4 — 읽음 broadcast coalescing (구현됨)
 
-- **A4 서버 coalescing**: 커서 payload가 상수·supersedable이라 방 단위 창 묶음 broadcast가 쉬움 — 측정 후 필요 시.
+`ReadReceiptCoalescer`가 방 단위 창(`socketio.read.coalesce-window-ms`, 기본 100ms) 동안의 커서 갱신을 모아 `{cursors: {userId → lastReadTs}}` 1건으로 방출한다. 방 N명이 같은 메시지를 읽어도 broadcast가 창당 1회로 줄어 **N² → N**. 더 큰 lastReadTs가 이전 값을 대체하므로 손실 없이 묶인다. `window ≤ 0`이면 즉시 broadcast(비활성/테스트). 같은 방 `enqueue`는 dispatcher roomId 레인으로 직렬화되고, 버퍼는 `ConcurrentHashMap.compute`/`computeIfPresent`의 키 단위 원자성으로 enqueue-merge와 flush-take가 끼어들지 않는다. 프론트는 `mergeReadCursorMap`으로 배치 payload를 병합.
+
+## 6. 남은 항목
+
 - **Redis 다중노드 원자화**: 현재 `advance`는 단일노드 방 디스패처 직렬화에 의존(HGET→비교→HSET). 다중노드로 가면 Lua 스크립트로 compare-and-set을 원자화해야 한다. (Mongo `$max`는 노드 수와 무관하게 원자적.)
-- **단일노드 인메모리 `UserRooms`**: scale-out 시 접근검증 캐시도 공유 저장소 필요(커서는 이미 Redis 지원).
+- **단일노드 인메모리 `UserRooms`/coalescer 버퍼**: scale-out 시 접근검증 캐시·coalescing 버퍼도 노드 로컬(커서·메시지는 이미 Redis 지원).

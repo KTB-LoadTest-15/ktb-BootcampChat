@@ -1,13 +1,12 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.corundumstudio.socketio.SocketIOClient;
-import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.MarkAsReadRequest;
-import com.ktb.chatapp.dto.MessagesReadResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.service.readcursor.ReadCursorStore;
+import com.ktb.chatapp.websocket.socketio.ReadReceiptCoalescer;
 import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
@@ -34,10 +33,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class MessageReadHandler {
 
-    private final SocketIOServer socketIOServer;
     private final MessageStore messageStore;
     private final ReadCursorStore readCursorStore;
     private final UserRooms userRooms;
+    private final ReadReceiptCoalescer readReceiptCoalescer;
     private final SocketDispatcher socketDispatcher;
 
     // 읽음 처리(커서 upsert + 브로드캐스트)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
@@ -91,8 +90,8 @@ public class MessageReadHandler {
                 return;
             }
 
-            socketIOServer.getRoomOperations(roomId)
-                    .sendEvent(MESSAGES_READ, new MessagesReadResponse(userId, lastReadTs));
+            // 방 단위로 짧게 묶어 broadcast(N번 → 창당 1번).
+            readReceiptCoalescer.enqueue(roomId, userId, lastReadTs);
 
         } catch (Exception e) {
             log.error("Error handling markMessagesAsRead", e);

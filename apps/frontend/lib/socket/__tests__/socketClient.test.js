@@ -346,7 +346,7 @@ describe('socketClient', () => {
     const unsubscribe = client.subscribeRoomEvents(socket, handlers);
 
     socket.emitToClient('participantsUpdate', ['user-1']);
-    socket.emitToClient('messagesRead', { userId: 'user-1', lastReadTs: 1000 });
+    socket.emitToClient('messagesRead', { cursors: { 'user-1': 1000 } });
     socket.emitToClient('message', { _id: 'message-1' });
     socket.emitToClient('previousMessagesLoaded', { messages: [], hasMore: false });
     socket.emitToClient('messageReactionUpdate', { messageId: 'message-1' });
@@ -354,7 +354,7 @@ describe('socketClient', () => {
     socket.emitToClient('error', { code: 'MESSAGE_REJECTED' });
 
     expect(handlers.onParticipantsUpdate).toHaveBeenCalledWith(['user-1']);
-    expect(handlers.onMessagesRead).toHaveBeenCalledWith({ userId: 'user-1', lastReadTs: 1000 });
+    expect(handlers.onMessagesRead).toHaveBeenCalledWith({ cursors: { 'user-1': 1000 } });
     expect(handlers.onMessage).toHaveBeenCalledWith({ _id: 'message-1' });
     expect(handlers.onPreviousMessagesLoaded).toHaveBeenCalledWith({ messages: [], hasMore: false });
     expect(handlers.onMessageReactionUpdate).toHaveBeenCalledWith({ messageId: 'message-1' });
