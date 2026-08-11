@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import ChatHeader from '@/components/ChatHeader';
 import api from '@/lib/api/client';
+import ensureSocketReady from '@/lib/socket/ensureSocketReady';
 
 export default function NewChatRoom() {
   const router = useRouter();
@@ -32,7 +33,12 @@ export default function NewChatRoom() {
 
   const joinRoom = async (roomId, password) => {
     try {
+      const socketReadyPromise = ensureSocketReady({
+        currentUser,
+      });
+
       await api.post(`/api/rooms/${roomId}/join`, { password });
+      await socketReadyPromise;
 
       router.push(`/chat/${roomId}`);
     } catch (error) {

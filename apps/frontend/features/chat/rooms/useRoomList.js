@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
+import ensureSocketReady from '@/lib/socket/ensureSocketReady';
 import { API_STATUS } from './useServerConnection';
 import { CONNECTION_STATUS } from './useRoomsSocket';
 
@@ -274,26 +275,21 @@ export const useRoomList = ({
       pathname: currentPathname(),
     });
 
-    if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
-      logRoomJoinMetric('connection_blocked', {
+    setJoiningRoom(true);
+
+    try {
+      const socketReadyPromise = ensureSocketReady({
+        currentUser,
+        attemptConnection,
+      });
+
+      logRoomJoinMetric('socket_prepare_start', {
         traceId,
         roomId,
         connectionStatus,
         pathname: currentPathname(),
-        durationMs: Math.round(now() - attemptStartedAt),
       });
 
-      setError({
-        title: '채팅방 입장 실패',
-        message: '서버와 연결이 끊어져 있습니다.',
-        type: 'danger',
-      });
-      return;
-    }
-
-    setJoiningRoom(true);
-
-    try {
       const requestStartedAt = now();
       logRoomJoinMetric('request_start', {
         traceId,
@@ -314,6 +310,16 @@ export const useRoomList = ({
       });
 
       if (response.data.success) {
+        await socketReadyPromise;
+
+        logRoomJoinMetric('socket_prepare_complete', {
+          traceId,
+          roomId,
+          connectionStatus,
+          pathname: currentPathname(),
+          durationMs: Math.round(now() - attemptStartedAt),
+        });
+
         const navigationStartedAt = now();
         const targetPath = `/chat/${roomId}`;
 
@@ -369,6 +375,14 @@ export const useRoomList = ({
         errorMessage = '채팅방을 찾을 수 없습니다.';
       } else if (error.response?.status === 403) {
         errorMessage = '채팅방 입장 권한이 없습니다.';
+      } else if (error.message === '인증 정보가 유효하지 않습니다.') {
+        errorMessage = error.message;
+      } else if (
+        error.message?.includes('Connection') ||
+        error.message?.includes('Socket') ||
+        error.message?.includes('websocket')
+      ) {
+        errorMessage = '채팅 서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
       }
 
       setError({
@@ -379,7 +393,7 @@ export const useRoomList = ({
     } finally {
       setJoiningRoom(false);
     }
-  }, [connectionStatus, router]);
+  }, [attemptConnection, connectionStatus, currentUser, router]);
 
   return {
     rooms,

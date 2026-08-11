@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosInstance from '@/services/axios';
+import ensureSocketReady from '@/lib/socket/ensureSocketReady';
 import { useRoomList } from '../useRoomList';
 import { API_STATUS } from '../useServerConnection';
 import { CONNECTION_STATUS } from '../useRoomsSocket';
@@ -10,6 +11,10 @@ vi.mock('@/services/axios', () => ({
     get: vi.fn(),
     post: vi.fn(),
   },
+}));
+
+vi.mock('@/lib/socket/ensureSocketReady', () => ({
+  default: vi.fn(() => Promise.resolve({ id: 'socket-1', connected: true })),
 }));
 
 const roomsResponse = (rooms) => ({ data: { data: rooms } });
@@ -67,11 +72,37 @@ describe('useRoomList', () => {
     const navigationLog = metricLogs.find((message) => message.includes('"event":"navigation_complete"'));
 
     expect(axiosInstance.post).toHaveBeenCalledWith('/api/rooms/room-1/join', {});
+    expect(ensureSocketReady).toHaveBeenCalledWith({
+      currentUser: { token: 'token-1' },
+      attemptConnection: expect.any(Function),
+    });
     expect(router.push).toHaveBeenCalledWith('/chat/room-1');
     expect(responseLog).toContain('"status":200');
     expect(responseLog).toContain('"retryCount":1');
     expect(navigationLog).toContain('"pathname":"/chat/room-1"');
 
+  });
+
+  it('reconnects the socket before entering a room even when the badge says disconnected', async () => {
+    const router = { push: vi.fn() };
+    axiosInstance.post.mockResolvedValue({
+      status: 200,
+      data: { success: true },
+      config: { retryCount: 0 },
+    });
+
+    const { result } = renderRoomList({
+      router,
+      connectionStatus: CONNECTION_STATUS.DISCONNECTED,
+    });
+
+    await act(async () => {
+      await result.current.handleJoinRoom('room-2');
+    });
+
+    expect(ensureSocketReady).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/chat/room-2');
+    expect(result.current.error).toBeNull();
   });
 
   it('replaces the list on refresh without leaving the refreshing flag on', async () => {
