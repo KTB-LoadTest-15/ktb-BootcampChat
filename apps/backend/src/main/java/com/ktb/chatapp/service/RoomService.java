@@ -68,33 +68,18 @@ public class RoomService {
     }
 
     public HealthResponse getHealthStatus() {
+        long startTime = System.currentTimeMillis();
+
         try {
-            long startTime = System.currentTimeMillis();
-
-            // MongoDB 연결 상태 확인
-            boolean isMongoConnected = false;
-            long latency = 0;
-
-            try {
-                // 간단한 쿼리로 연결 상태 및 지연 시간 측정
-                roomRepository.findOneForHealthCheck();
-                long endTime = System.currentTimeMillis();
-                latency = endTime - startTime;
-                isMongoConnected = true;
-            } catch (Exception e) {
-                log.warn("MongoDB 연결 확인 실패", e);
-                isMongoConnected = false;
-            }
-
-            // 최근 활동 조회
+            // 최근 방 조회 한 번으로 연결 상태, 지연 시간, 최근 활동을 함께 확인한다.
             LocalDateTime lastActivity = roomRepository.findMostRecentRoom()
                     .map(Room::getCreatedAt)
                     .orElse(null);
+            long latency = System.currentTimeMillis() - startTime;
 
-            // 서비스 상태 정보 구성
             Map<String, HealthResponse.ServiceHealth> services = new HashMap<>();
             services.put("database", HealthResponse.ServiceHealth.builder()
-                .connected(isMongoConnected)
+                .connected(true)
                 .latency(latency)
                 .build());
 
@@ -105,10 +90,16 @@ public class RoomService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Health check 실행 중 에러 발생", e);
+            log.warn("MongoDB 연결 확인 실패", e);
+            Map<String, HealthResponse.ServiceHealth> services = new HashMap<>();
+            services.put("database", HealthResponse.ServiceHealth.builder()
+                .connected(false)
+                .latency(System.currentTimeMillis() - startTime)
+                .build());
+
             return HealthResponse.builder()
                 .success(false)
-                .services(new HashMap<>())
+                .services(services)
                 .build();
         }
     }
