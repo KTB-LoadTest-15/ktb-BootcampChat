@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   PdfIcon as FileText,
   ImageIcon as Image,
@@ -19,29 +19,22 @@ const FileMessage = ({
   msg = {},
   isMine = false,
   currentUser = null,
-  cursors = {},
+  unreadCount = 0,
+  participantNamesById,
   onReactionAdd,
   onReactionRemove,
-  onMessageRead,
-  room = null
 }) => {
   const { user } = useAuth();
   const [error, setError] = useState(null);
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const messageDomRef = useRef(null);
-  useEffect(() => {
-    if (msg?.file) {
-      setError(null);
-      setImageLoadFailed(false);
-      const url = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
-      setPreviewUrl(url);
-      console.debug('Preview URL generated:', {
-        filename: msg.file.filename,
-        url
-      });
-    }
-  }, [msg?.file, user?.token, user?.sessionId]);
+  const readableTimestamp = typeof msg.timestamp === 'number'
+    ? msg.timestamp
+    : Date.parse(msg.timestamp);
+  const previewUrl = (
+    msg?.file
+      ? fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true)
+      : ''
+  );
 
   if (!msg?.file) {
     console.error('File data is missing:', msg);
@@ -174,17 +167,12 @@ const FileMessage = ({
         throw new Error('인증 정보가 없습니다.');
       }
 
-      const previewUrl = fileService.getPreviewUrl(msg.file, user?.token, user?.sessionId, true);
-
       return (
         <div className="bg-transparent-pattern">
           <img
             src={previewUrl}
             alt={originalname}
             className="max-w-[400px] max-h-[400px] object-cover object-center rounded-md"
-            onLoad={() => {
-              console.debug('Image loaded successfully:', originalname);
-            }}
             onError={(e) => {
               console.error('Image load error:', {
                 error: e.error,
@@ -194,6 +182,7 @@ const FileMessage = ({
               setImageLoadFailed(true);
               setError('이미지를 불러올 수 없습니다.');
             }}
+            decoding="async"
             loading="lazy"
             data-testid="file-image-preview"
           />
@@ -201,7 +190,6 @@ const FileMessage = ({
       );
     } catch (error) {
       console.error('Image preview error:', error);
-      setError(error.message || '이미지 미리보기를 불러올 수 없습니다.');
       return (
         <div className="flex items-center justify-center h-full bg-gray-100">
           <Image className="w-8 h-8 text-gray-400" />
@@ -311,7 +299,12 @@ const FileMessage = ({
   };
 
   return (
-    <div className="my-4" ref={messageDomRef} data-testid="file-message-container">
+    <div
+      className="my-4"
+      data-testid="file-message-container"
+      data-readable-message-id={msg._id}
+      data-readable-message-timestamp={Number.isFinite(readableTimestamp) ? readableTimestamp : undefined}
+    >
       <VStack
         className={`max-w-[65%] ${isMine ? 'ml-auto items-end' : 'mr-auto items-start'}`}
         align={isMine ? 'flex-end' : 'flex-start'}
@@ -367,13 +360,7 @@ const FileMessage = ({
             </div>
             <ReadStatus
               messageType={msg.type}
-              participants={room?.participants || []}
-              cursors={cursors}
-              messageTimestamp={msg.timestamp}
-              messageId={msg._id}
-              messageRef={messageDomRef}
-              currentUserId={currentUser?._id || currentUser?.id}
-              onMessageRead={onMessageRead}
+              unreadCount={unreadCount}
             />
           </HStack>
         </div>
@@ -387,7 +374,7 @@ const FileMessage = ({
           onReactionAdd={onReactionAdd}
           onReactionRemove={onReactionRemove}
           isMine={isMine}
-          room={room}
+          participantNamesById={participantNamesById}
         />
       </VStack>
     </div>
@@ -405,7 +392,8 @@ FileMessage.defaultProps = {
   },
   isMine: false,
   currentUser: null,
-  onMessageRead: () => false
+  unreadCount: 0,
+  participantNamesById: null,
 };
 
 export default React.memo(FileMessage);

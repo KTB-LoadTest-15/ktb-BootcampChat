@@ -3,6 +3,37 @@ import { Avatar } from '@vapor-ui/core';
 import { generateColorFromEmail, getContrastTextColor } from '@/utils/colorUtils';
 import { loadStoredUser } from '@/lib/auth/authStorage';
 
+const profileUpdateSubscribers = new Set();
+let isProfileUpdateListenerAttached = false;
+
+const notifyProfileUpdateSubscribers = () => {
+  let updatedUser = {};
+  try {
+    updatedUser = loadStoredUser() || {};
+  } catch (error) {
+    console.error('Profile update handling error:', error);
+  }
+  profileUpdateSubscribers.forEach(subscriber => subscriber(updatedUser));
+};
+
+const subscribeToProfileUpdates = (subscriber) => {
+  if (typeof window === 'undefined') return () => {};
+
+  profileUpdateSubscribers.add(subscriber);
+  if (!isProfileUpdateListenerAttached) {
+    window.addEventListener('userProfileUpdate', notifyProfileUpdateSubscribers);
+    isProfileUpdateListenerAttached = true;
+  }
+
+  return () => {
+    profileUpdateSubscribers.delete(subscriber);
+    if (profileUpdateSubscribers.size === 0 && isProfileUpdateListenerAttached) {
+      window.removeEventListener('userProfileUpdate', notifyProfileUpdateSubscribers);
+      isProfileUpdateListenerAttached = false;
+    }
+  };
+};
+
 /**
  * CustomAvatar 컴포넌트
  * 
@@ -30,7 +61,7 @@ const CustomAvatar = forwardRef(({
   ...props
 }, ref) => {
   // persistent 모드일 때만 상태 관리
-  const [currentImage, setCurrentImage] = useState('');
+  const [profileImageOverride, setProfileImageOverride] = useState(undefined);
   const [imageError, setImageError] = useState(false);
 
   // 이메일 기반 배경색/텍스트 색상 생성
@@ -52,44 +83,28 @@ const CustomAvatar = forwardRef(({
     return `${process.env.NEXT_PUBLIC_API_URL}${imagePath}`;
   }, [src]);
 
-  // persistent 모드: 프로필 이미지 URL 처리
-  useEffect(() => {
-    if (!persistent) return;
-
-    const imageUrl = getImageUrl(user?.profileImage);
-    if (imageUrl && imageUrl !== currentImage) {
-      setImageError(false);
-      setCurrentImage(imageUrl);
-    } else if (!imageUrl) {
-      setCurrentImage('');
-    }
-  }, [persistent, user?.profileImage, getImageUrl, currentImage]);
-
   // persistent 모드: 전역 프로필 업데이트 리스너
   useEffect(() => {
     if (!persistent) return;
 
-    const handleProfileUpdate = () => {
-      try {
-        const updatedUser = loadStoredUser() || {};
-        // 현재 사용자의 프로필이 업데이트된 경우에만 이미지 업데이트
-        if (user?.id === updatedUser.id && updatedUser.profileImage !== user.profileImage) {
-          const newImageUrl = getImageUrl(updatedUser.profileImage);
-          setImageError(false);
-          setCurrentImage(newImageUrl);
-        }
-      } catch (error) {
-        console.error('Profile update handling error:', error);
+    const handleProfileUpdate = (updatedUser) => {
+      const avatarUserId = user?._id || user?.id;
+      const updatedUserId = updatedUser?._id || updatedUser?.id;
+      if (avatarUserId === updatedUserId && updatedUser.profileImage !== user?.profileImage) {
+        setImageError(false);
+        setProfileImageOverride(updatedUser.profileImage || '');
       }
     };
-    
-    window.addEventListener('userProfileUpdate', handleProfileUpdate);
-    return () => {
-      window.removeEventListener('userProfileUpdate', handleProfileUpdate);
-    };
-  }, [persistent, getImageUrl, user?.id, user?.profileImage]);
+
+    return subscribeToProfileUpdates(handleProfileUpdate);
+  }, [persistent, getImageUrl, user?._id, user?.id, user?.profileImage]);
 
   // 이미지 에러 핸들러
+  const effectiveProfileImage = profileImageOverride === undefined
+    ? user?.profileImage
+    : profileImageOverride;
+  const resolvedImageUrl = getImageUrl(effectiveProfileImage);
+
   const handleImageError = useCallback((e) => {
     if (!persistent) return;
     
@@ -99,19 +114,14 @@ const CustomAvatar = forwardRef(({
     console.debug('Avatar image load failed:', {
       user: user?.name,
       email: user?.email,
-      imageUrl: persistent ? currentImage : getImageUrl(user?.profileImage)
+      imageUrl: resolvedImageUrl,
     });
-  }, [persistent, currentImage, user?.name, user?.email, user?.profileImage, getImageUrl]);
+  }, [persistent, resolvedImageUrl, user?.name, user?.email]);
 
   // 최종 이미지 URL 결정
   const finalImageUrl = (() => {
     if (!showImage) return undefined;
-    
-    if (persistent) {
-      return currentImage && !imageError ? currentImage : undefined;
-    }
-    
-    return getImageUrl(user?.profileImage);
+    return resolvedImageUrl && !imageError ? resolvedImageUrl : undefined;
   })();
 
   // 사용자 이름 첫 글자
@@ -153,4 +163,4 @@ const CustomAvatar = forwardRef(({
 
 CustomAvatar.displayName = 'CustomAvatar';
 
-export default CustomAvatar;
+export default React.memo(CustomAvatar);

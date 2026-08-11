@@ -3,6 +3,8 @@ import {
   mergeSortedMessages,
 } from '../messages/useMessageList';
 
+export const MESSAGE_BATCH_DELAY_MS = 16;
+
 export const processLoadedRoomMessages = ({
   loadedMessages,
   hasMore,
@@ -63,18 +65,6 @@ export const mergeReadCursorMap = (cursors, incoming) => {
   return next;
 };
 
-export const appendIncomingMessage = (messages, incoming) => {
-  if (!incoming?._id) {
-    return messages;
-  }
-
-  if (messages.some(msg => msg._id === incoming._id)) {
-    return messages;
-  }
-
-  return [...messages, incoming];
-};
-
 export const createRoomEventHandlers = ({
   mountedRef,
   messageProcessingRef,
@@ -92,7 +82,53 @@ export const createRoomEventHandlers = ({
   onReplace,
   handleReactionUpdate,
   showRejectedMessage,
+  scheduleMessageFlush = callback => setTimeout(callback, MESSAGE_BATCH_DELAY_MS),
+  cancelMessageFlush = handle => clearTimeout(handle),
 }) => {
+  let pendingMessages = [];
+  let pendingReadCursors = {};
+  let messageFlushHandle = null;
+
+  const flushPendingMessages = () => {
+    messageFlushHandle = null;
+
+    if (!mountedRef.current) {
+      pendingMessages = [];
+      pendingReadCursors = {};
+      return;
+    }
+
+    const messagesToAppend = pendingMessages;
+    const readCursorsToMerge = pendingReadCursors;
+    pendingMessages = [];
+    pendingReadCursors = {};
+
+    if (messagesToAppend.length > 0) {
+      setMessages(previousMessages => (
+        mergeSortedMessages(previousMessages, messagesToAppend)
+      ));
+    }
+    if (Object.keys(readCursorsToMerge).length > 0) {
+      setReadCursors(previousCursors => (
+        mergeReadCursorMap(previousCursors, readCursorsToMerge)
+      ));
+    }
+  };
+
+  const schedulePendingMessageFlush = () => {
+    if (messageFlushHandle !== null) return;
+    messageFlushHandle = scheduleMessageFlush(flushPendingMessages);
+  };
+
+  const dispose = () => {
+    if (messageFlushHandle !== null) {
+      cancelMessageFlush(messageFlushHandle);
+      messageFlushHandle = null;
+    }
+    pendingMessages = [];
+    pendingReadCursors = {};
+  };
+
   const handlePreviousMessages = (response) => {
     if (!mountedRef.current || messageProcessingRef.current) return;
     try {
@@ -114,19 +150,23 @@ export const createRoomEventHandlers = ({
   };
 
   return {
+    dispose,
+    flushPendingMessages,
     onParticipantsUpdate: (participants) => {
       if (!mountedRef.current) return;
       setRoom(prev => ({ ...prev, participants: participants || [] }));
     },
     onMessagesRead: (payload) => {
       if (!mountedRef.current || !payload?.cursors) return;
-      setReadCursors(prev => mergeReadCursorMap(prev, payload.cursors));
+      pendingReadCursors = mergeReadCursorMap(pendingReadCursors, payload.cursors);
+      schedulePendingMessageFlush();
     },
     onMessage: (incoming) => {
       if (!mountedRef.current || messageProcessingRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
       processedMessageIds.current.add(incoming._id);
-      setMessages(prev => appendIncomingMessage(prev, incoming));
+      pendingMessages.push(incoming);
+      schedulePendingMessageFlush();
     },
     onPreviousMessagesLoaded: handlePreviousMessages,
     onMessageReactionUpdate: (data) => {
@@ -135,6 +175,7 @@ export const createRoomEventHandlers = ({
     },
     onSessionEnded: () => {
       if (!mountedRef.current) return;
+      dispose();
       cleanup();
       logout();
       onReplace('/?error=session_expired');

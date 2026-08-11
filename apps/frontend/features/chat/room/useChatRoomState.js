@@ -50,25 +50,41 @@ export const chatRoomReducer = (state, action) => {
         readCursors: {},
       };
     case 'room/changed':
-      return {
-        ...state,
-        room: resolveValue(action.room, state.room),
-      };
+      {
+        const room = resolveValue(action.room, state.room);
+        if (room === state.room) return state;
+        return {
+          ...state,
+          room,
+        };
+      }
     case 'messages/changed':
-      return {
-        ...state,
-        messages: resolveValue(action.messages, state.messages),
-      };
+      {
+        const messages = resolveValue(action.messages, state.messages);
+        if (messages === state.messages) return state;
+        return {
+          ...state,
+          messages,
+        };
+      }
     case 'readCursors/changed':
-      return {
-        ...state,
-        readCursors: resolveValue(action.readCursors, state.readCursors),
-      };
+      {
+        const readCursors = resolveValue(action.readCursors, state.readCursors);
+        if (readCursors === state.readCursors) return state;
+        return {
+          ...state,
+          readCursors,
+        };
+      }
     case 'error/changed':
-      return {
-        ...state,
-        error: resolveValue(action.error, state.error),
-      };
+      {
+        const error = resolveValue(action.error, state.error);
+        if (error === state.error) return state;
+        return {
+          ...state,
+          error,
+        };
+      }
     case 'connection/established':
       return {
         ...state,
@@ -97,16 +113,19 @@ export const chatRoomReducer = (state, action) => {
         error: '',
       };
     case 'messages/loadingChanged':
+      if (action.loadingMessages === state.loadingMessages) return state;
       return {
         ...state,
         loadingMessages: action.loadingMessages,
       };
     case 'messages/hasMoreChanged':
+      if (action.hasMoreMessages === state.hasMoreMessages) return state;
       return {
         ...state,
         hasMoreMessages: action.hasMoreMessages,
       };
     case 'user/currentChanged':
+      if (action.currentUser === state.currentUser) return state;
       return {
         ...state,
         currentUser: action.currentUser,

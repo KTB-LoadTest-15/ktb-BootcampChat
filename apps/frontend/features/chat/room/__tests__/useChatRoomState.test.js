@@ -124,6 +124,30 @@ describe('chatRoomReducer', () => {
     })).toBe(state);
   });
 
+  it('preserves the state reference when a focused update is a no-op', () => {
+    const messages = [{ _id: 'message-1' }];
+    const readCursors = { 'user-1': 1000 };
+    const state = {
+      ...createInitialChatRoomState(),
+      messages,
+      readCursors,
+      loadingMessages: false,
+    };
+
+    expect(chatRoomReducer(state, {
+      type: 'messages/changed',
+      messages: current => current,
+    })).toBe(state);
+    expect(chatRoomReducer(state, {
+      type: 'readCursors/changed',
+      readCursors: current => current,
+    })).toBe(state);
+    expect(chatRoomReducer(state, {
+      type: 'messages/loadingChanged',
+      loadingMessages: false,
+    })).toBe(state);
+  });
+
   it('handles semantic connection lifecycle transitions', () => {
     const state = {
       ...createInitialChatRoomState(),

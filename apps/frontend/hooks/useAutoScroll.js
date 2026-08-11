@@ -23,7 +23,10 @@ export const useAutoScroll = (
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
   const previousMessagesLengthRef = useRef(0);
+  const previousLastMessageIdRef = useRef(null);
   const isAutoScrollingRef = useRef(false);
+  const scrollFrameRef = useRef(null);
+  const scrollResetTimerRef = useRef(null);
   
   // 스크롤 복원을 위한 ref
   const previousScrollHeightRef = useRef(0);
@@ -47,21 +50,39 @@ export const useAutoScroll = (
    * 최하단으로 스크롤
    */
   const scrollToBottom = useCallback((behavior = 'smooth') => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (scrollFrameRef.current !== null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+    }
 
-    isAutoScrollingRef.current = true;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container = containerRef.current;
+      if (!container) return;
 
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior
+      isAutoScrollingRef.current = true;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior
+      });
+
+      if (scrollResetTimerRef.current !== null) {
+        clearTimeout(scrollResetTimerRef.current);
+      }
+      scrollResetTimerRef.current = setTimeout(() => {
+        scrollResetTimerRef.current = null;
+        isAutoScrollingRef.current = false;
+        isNearBottomRef.current = true;
+      }, behavior === 'smooth' ? 300 : 0);
     });
+  }, []);
 
-    // 스크롤 완료 후 플래그 리셋
-    setTimeout(() => {
-      isAutoScrollingRef.current = false;
-      isNearBottomRef.current = true;
-    }, 300);
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+    }
+    if (scrollResetTimerRef.current !== null) {
+      clearTimeout(scrollResetTimerRef.current);
+    }
   }, []);
 
   /**
@@ -126,25 +147,45 @@ export const useAutoScroll = (
     }
 
     // 메시지가 추가되지 않았으면 무시
-    if (messages.length === 0 || messages.length === previousMessagesLengthRef.current) {
+    if (messages.length === 0) {
+      previousMessagesLengthRef.current = 0;
+      previousLastMessageIdRef.current = null;
+      return;
+    }
+    if (messages.length === previousMessagesLengthRef.current) {
       return;
     }
 
     // 이전보다 메시지가 줄었으면 (초기화 등) 무시
     if (messages.length < previousMessagesLengthRef.current) {
       previousMessagesLengthRef.current = messages.length;
+      const latestMessage = messages[messages.length - 1];
+      previousLastMessageIdRef.current = latestMessage?._id || latestMessage?.id || null;
+      return;
+    }
+
+    const latestMessage = messages[messages.length - 1];
+    const latestMessageId = latestMessage?._id || latestMessage?.id || null;
+    const previousLength = previousMessagesLengthRef.current;
+
+    // 과거 페이지가 앞에 추가된 경우 최신 메시지는 동일하다. 자동 하단 이동을 하지 않는다.
+    if (
+      previousLength > 0 &&
+      previousLastMessageIdRef.current &&
+      previousLastMessageIdRef.current === latestMessageId
+    ) {
+      previousMessagesLengthRef.current = messages.length;
       return;
     }
 
     // 새로 추가된 메시지들 확인
-    const newMessages = messages.slice(previousMessagesLengthRef.current);
+    const newMessages = messages.slice(previousLength);
     previousMessagesLengthRef.current = messages.length;
+    previousLastMessageIdRef.current = latestMessageId;
 
     // 새 메시지가 없으면 무시
     if (newMessages.length === 0) return;
 
-    // 가장 최근 메시지 확인
-    const latestMessage = newMessages[newMessages.length - 1];
     if (!latestMessage) return;
 
     // 메시지 발신자 확인
@@ -154,10 +195,10 @@ export const useAutoScroll = (
     // 자동 스크롤 조건 확인
     if (isMyMessage) {
       // 내가 쓴 메시지 → 무조건 스크롤
-      scrollToBottom('smooth');
+      scrollToBottom(newMessages.length > 1 ? 'auto' : 'smooth');
     } else if (isNearBottomRef.current) {
       // 남이 쓴 메시지 + 하단 근처에 있음 → 자동 스크롤
-      scrollToBottom('smooth');
+      scrollToBottom(newMessages.length > 1 ? 'auto' : 'smooth');
     } else {
       // 남이 쓴 메시지 + 상단에 있음 → 스크롤 안함
     }
@@ -168,8 +209,8 @@ export const useAutoScroll = (
    */
   useEffect(() => {
     if (messages.length > 0 && previousMessagesLengthRef.current === 0) {
-      // 초기 로드는 즉시 스크롤 (애니메이션 없이)
-      setTimeout(() => scrollToBottom('auto'), 100);
+      // 초기 로드는 다음 프레임에 즉시 이동한다.
+      scrollToBottom('auto');
     }
   }, [messages.length, scrollToBottom]);
 

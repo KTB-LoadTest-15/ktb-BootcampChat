@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  appendIncomingMessage,
   createRoomEventHandlers,
   mergeReadCursor,
   mergeReadCursorMap,
@@ -59,17 +58,6 @@ describe('roomEventHandlers', () => {
     ).toEqual({ 'user-1': 3000, 'user-2': 5000 });
   });
 
-  it('appends incoming messages only once', () => {
-    const currentMessages = [{ _id: 'message-1' }];
-
-    expect(appendIncomingMessage(currentMessages, { _id: 'message-1' })).toBe(
-      currentMessages
-    );
-    expect(
-      appendIncomingMessage(currentMessages, { _id: 'message-2' })
-    ).toEqual([{ _id: 'message-1' }, { _id: 'message-2' }]);
-  });
-
   it('keeps live messages when the updater is invoked twice (StrictMode)', () => {
     const mountedRef = { current: true };
     const processedMessageIds = { current: new Set() };
@@ -99,11 +87,61 @@ describe('roomEventHandlers', () => {
       onReplace: vi.fn(),
       handleReactionUpdate: vi.fn(),
       showRejectedMessage: vi.fn(),
+      scheduleMessageFlush: callback => {
+        callback();
+        return null;
+      },
     });
 
     handlers.onMessage({ _id: 'message-live' });
 
     expect(committed.map(message => message._id)).toEqual(['message-live']);
+  });
+
+  it('batches burst messages into one chronological state update', () => {
+    vi.useFakeTimers();
+    try {
+      const processedMessageIds = { current: new Set() };
+      let committed = [];
+      const setMessages = vi.fn(updater => {
+        committed = updater(committed);
+      });
+      const handlers = createRoomEventHandlers({
+        mountedRef: { current: true },
+        messageProcessingRef: { current: false },
+        processedMessageIds,
+        initialLoadCompletedRef: { current: true },
+        processMessages: vi.fn(),
+        setRoom: vi.fn(),
+        setMessages,
+        setReadCursors: vi.fn(),
+        setLoadingMessages: vi.fn(),
+        setError: vi.fn(),
+        setHasMoreMessages: vi.fn(),
+        cleanup: vi.fn(),
+        logout: vi.fn(),
+        onReplace: vi.fn(),
+        handleReactionUpdate: vi.fn(),
+        showRejectedMessage: vi.fn(),
+      });
+
+      handlers.onMessage({ _id: 'message-2', timestamp: 2000 });
+      handlers.onMessage({ _id: 'message-1', timestamp: 1000 });
+      handlers.onMessage({ _id: 'message-3', timestamp: 3000 });
+
+      expect(setMessages).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(16);
+
+      expect(setMessages).toHaveBeenCalledTimes(1);
+      expect(committed.map(message => message._id)).toEqual([
+        'message-1',
+        'message-2',
+        'message-3',
+      ]);
+      handlers.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('creates room event handlers with mounted and processing guards', () => {
@@ -141,6 +179,10 @@ describe('roomEventHandlers', () => {
       onReplace,
       handleReactionUpdate,
       showRejectedMessage,
+      scheduleMessageFlush: callback => {
+        callback();
+        return null;
+      },
     });
 
     handlers.onParticipantsUpdate([{ _id: 'user-1' }]);

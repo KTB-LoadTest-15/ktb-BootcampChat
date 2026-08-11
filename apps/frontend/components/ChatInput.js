@@ -80,7 +80,7 @@ const ChatInput = forwardRef(({
         fileInputRef.current.value = '';
       }
     }
-  }, [onFileSelect]);
+  }, [fileInputRef, onFileSelect]);
 
   const handleFileRemove = useCallback((fileToRemove) => {
     selectedFilesRef.current = selectedFilesRef.current.filter(
@@ -146,7 +146,7 @@ const ChatInput = forwardRef(({
       setShowEmojiPicker(false);
       setShowMentionList(false);
     }
-  }, [files, message, onSubmit, setMessage, setShowEmojiPicker, setShowMentionList]);
+  }, [message, onSubmit, setMessage, setShowEmojiPicker, setShowMentionList]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -192,9 +192,12 @@ const ChatInput = forwardRef(({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('paste', handlePaste);
-      files.forEach(file => URL.revokeObjectURL(file.url));
     };
-  }, [showEmojiPicker, setShowEmojiPicker, files, messageInputRef, handleFileValidationAndPreview]);
+  }, [showEmojiPicker, setShowEmojiPicker, messageInputRef, handleFileValidationAndPreview]);
+
+  useEffect(() => () => {
+    selectedFilesRef.current.forEach(file => URL.revokeObjectURL(file.url));
+  }, []);
 
   const calculateMentionPosition = useCallback((textarea, atIndex) => {
     // Get all text before @ symbol
@@ -526,4 +529,4 @@ const ChatInput = forwardRef(({
 
 ChatInput.displayName = 'ChatInput';
 
-export default ChatInput;
+export default React.memo(ChatInput);

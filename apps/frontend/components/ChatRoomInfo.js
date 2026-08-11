@@ -152,4 +152,4 @@ const ChatRoomInfo = ({ room, connectionStatus }) => {
   );
 };
 
-export default ChatRoomInfo;
+export default React.memo(ChatRoomInfo);

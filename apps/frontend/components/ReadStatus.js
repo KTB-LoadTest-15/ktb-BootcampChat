@@ -1,93 +1,12 @@
-import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import React from 'react';
 import { ConfirmOutlineIcon } from '@vapor-ui/icons';
 import { Text, HStack } from '@vapor-ui/core';
 
-const cursorFor = (cursors, participant) => {
-  if (!cursors) return -1;
-  const byId = cursors[participant?._id];
-  if (byId !== undefined) return byId;
-  const byAltId = cursors[participant?.id];
-  return byAltId !== undefined ? byAltId : -1;
-};
-
 const ReadStatus = ({
   messageType = 'text',
-  participants = [],
-  cursors = {},
-  messageTimestamp = 0,
+  unreadCount = 0,
   className = '',
-  messageId = null,
-  messageRef = null, // 메시지 요소의 ref 추가
-  currentUserId = null, // 현재 사용자 ID 추가
-  onMessageRead = () => false
 }) => {
-  const [hasMarkedAsRead, setHasMarkedAsRead] = useState(false);
-  const statusRef = useRef(null);
-  const observerRef = useRef(null);
-
-  // 읽지 않은 참여자 수: 커서(cursor[userId] < 메시지 timestamp)에서 파생.
-  const unreadCount = useMemo(() => {
-    if (messageType === 'system') return 0;
-    return participants.reduce(
-      (count, participant) => (cursorFor(cursors, participant) < messageTimestamp ? count + 1 : count),
-      0
-    );
-  }, [participants, cursors, messageTimestamp, messageType]);
-
-  // 내가 이미 이 메시지를 읽었는지(내 커서가 메시지 timestamp 이상).
-  const alreadyReadByMe = (cursors?.[currentUserId] ?? -1) >= messageTimestamp;
-
-  // 메시지를 읽음으로 표시(뷰포트 진입 시 마지막 읽은 timestamp를 배칭 송신).
-  const markMessageAsRead = useCallback(() => {
-    if (!messageId || !currentUserId || hasMarkedAsRead || messageType === 'system') {
-      return;
-    }
-    try {
-      // 서버가 timestamp를 정하도록 messageId를 넘긴다. timestamp는 로컬 배칭(최댓값 선택)용.
-      if (onMessageRead(messageId, messageTimestamp)) {
-        setHasMarkedAsRead(true);
-      }
-    } catch (error) {
-      console.error('Error marking message as read:', error);
-    }
-  }, [messageId, currentUserId, hasMarkedAsRead, messageType, messageTimestamp, onMessageRead]);
-
-  // Intersection Observer 설정
-  useEffect(() => {
-    if (!messageRef?.current || !currentUserId || hasMarkedAsRead || messageType === 'system') {
-      return;
-    }
-
-    // 이미 내 커서가 이 메시지를 덮으면 재전송 불필요.
-    if (alreadyReadByMe) {
-      setHasMarkedAsRead(true);
-      return;
-    }
-
-    const observerOptions = {
-      root: null,
-      rootMargin: '0px',
-      threshold: 0.5 // 메시지의 50%가 보여야 읽음으로 처리
-    };
-
-    const handleIntersect = (entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting && !hasMarkedAsRead) {
-          markMessageAsRead();
-        }
-      });
-    };
-
-    observerRef.current = new IntersectionObserver(handleIntersect, observerOptions);
-    observerRef.current.observe(messageRef.current);
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [messageRef, currentUserId, hasMarkedAsRead, messageType, alreadyReadByMe, markMessageAsRead]);
-
   // 시스템 메시지는 읽음 상태 표시 안 함
   if (messageType === 'system') {
     return null;
@@ -98,7 +17,6 @@ const ReadStatus = ({
     return (
       <HStack
         className={className}
-        ref={statusRef}
         $css={{ gap: '$050', alignItems: 'center' }}
         role="status"
         aria-label="모든 참여자가 메시지를 읽었습니다"
@@ -117,7 +35,6 @@ const ReadStatus = ({
   return (
     <HStack
       className={className}
-      ref={statusRef}
       $css={{ gap: '$050', alignItems: 'center' }}
       role="status"
       aria-label={`${unreadCount}명이 메시지를 읽지 않았습니다`}
@@ -133,4 +50,4 @@ const ReadStatus = ({
   );
 };
 
-export default ReadStatus;
+export default React.memo(ReadStatus);

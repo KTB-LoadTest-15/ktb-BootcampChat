@@ -32,18 +32,18 @@ vi.mock('../UserMessage', () => ({
 }));
 
 describe('ChatMessages', () => {
-  it('renders messages sorted by timestamp without mutating the input array', () => {
+  it('renders the chronological state order without copying or re-sorting it', () => {
     const messages = [
-      {
-        _id: 'late',
-        content: 'late message',
-        timestamp: '2026-06-20T12:00:00.000Z',
-        sender: { _id: 'other' },
-      },
       {
         _id: 'early',
         content: 'early message',
         timestamp: '2026-06-20T11:00:00.000Z',
+        sender: { _id: 'other' },
+      },
+      {
+        _id: 'late',
+        content: 'late message',
+        timestamp: '2026-06-20T12:00:00.000Z',
         sender: { _id: 'other' },
       },
     ];

@@ -78,27 +78,33 @@ export const useRoomHandling = ({
       roomEventsUnsubscribeRef.current = null;
     }
 
-    roomEventsUnsubscribeRef.current = socketClient.subscribeRoomEvents(
+    const roomEventHandlers = createRoomEventHandlers({
+      mountedRef,
+      messageProcessingRef,
+      processedMessageIds,
+      initialLoadCompletedRef,
+      processMessages,
+      setRoom,
+      setMessages,
+      setReadCursors,
+      setLoadingMessages,
+      setError,
+      setHasMoreMessages,
+      cleanup,
+      logout,
+      onReplace,
+      handleReactionUpdate,
+      showRejectedMessage: Toast.error.bind(Toast),
+    });
+    const unsubscribeSocketEvents = socketClient.subscribeRoomEvents(
       socketRef.current,
-      createRoomEventHandlers({
-        mountedRef,
-        messageProcessingRef,
-        processedMessageIds,
-        initialLoadCompletedRef,
-        processMessages,
-        setRoom,
-        setMessages,
-        setReadCursors,
-        setLoadingMessages,
-        setError,
-        setHasMoreMessages,
-        cleanup,
-        logout,
-        onReplace,
-        handleReactionUpdate,
-        showRejectedMessage: Toast.error.bind(Toast),
-      })
+      roomEventHandlers
     );
+
+    roomEventsUnsubscribeRef.current = () => {
+      unsubscribeSocketEvents();
+      roomEventHandlers.dispose();
+    };
   }, [
     processMessages,
     setHasMoreMessages,

@@ -1,5 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 
+const DEFAULT_OPTIONS = Object.freeze({});
+
 /**
  * IntersectionObserver 기반 무한 스크롤 훅
  * 
@@ -13,7 +15,7 @@ export const useInfiniteScroll = (
   onLoadMore,
   hasMore = true,
   isLoading = false,
-  options = {}
+  options = DEFAULT_OPTIONS
 ) => {
   const sentinelRef = useRef(null);
   const observerRef = useRef(null);

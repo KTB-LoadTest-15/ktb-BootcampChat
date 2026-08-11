@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { VStack, HStack } from '@vapor-ui/core';
 import MessageContent from './MessageContent';
 import MessageActions from './MessageActions';
@@ -9,14 +9,14 @@ const UserMessage = ({
   msg = {},
   isMine = false,
   currentUser = null,
-  cursors = {},
+  unreadCount = 0,
+  participantNamesById,
   onReactionAdd,
   onReactionRemove,
-  onMessageRead,
-  room = null
 }) => {
-  // 메시지 DOM 요소에 대한 ref 생성
-  const messageDomRef = useRef(null);
+  const readableTimestamp = typeof msg.timestamp === 'number'
+    ? msg.timestamp
+    : Date.parse(msg.timestamp);
 
   const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
@@ -31,7 +31,12 @@ const UserMessage = ({
   const user = isMine ? currentUser : msg.sender;
 
   return (
-    <div className="my-4" ref={messageDomRef} data-testid="message-container">
+    <div
+      className="my-4"
+      data-testid="message-container"
+      data-readable-message-id={msg._id}
+      data-readable-message-timestamp={Number.isFinite(readableTimestamp) ? readableTimestamp : undefined}
+    >
       <VStack
         className={`max-w-[65%] ${isMine ? 'ml-auto items-end' : 'mr-auto items-start'}`}
         align={isMine ? 'flex-end' : 'flex-start'}
@@ -84,13 +89,7 @@ const UserMessage = ({
             </div>
             <ReadStatus
               messageType={msg.type}
-              participants={room?.participants || []}
-              cursors={cursors}
-              messageTimestamp={msg.timestamp}
-              messageId={msg._id}
-              messageRef={messageDomRef}
-              currentUserId={currentUser?._id || currentUser?.id}
-              onMessageRead={onMessageRead}
+              unreadCount={unreadCount}
             />
           </HStack>
         </div>
@@ -104,7 +103,7 @@ const UserMessage = ({
           onReactionAdd={onReactionAdd}
           onReactionRemove={onReactionRemove}
           isMine={isMine}
-          room={room}
+          participantNamesById={participantNamesById}
         />
       </VStack>
     </div>
@@ -117,8 +116,8 @@ UserMessage.defaultProps = {
   currentUser: null,
   onReactionAdd: () => {},
   onReactionRemove: () => {},
-  onMessageRead: () => false,
-  room: null
+  unreadCount: 0,
+  participantNamesById: null,
 };
 
 export default React.memo(UserMessage);

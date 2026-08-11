@@ -2,10 +2,21 @@ import { useCallback } from 'react';
 import { Toast } from '@/components/Toast';
 import socketClient from '@/lib/socket/socketClient';
 
-const addUserReaction = (messages, messageId, reaction, userId) =>
-  messages.map(msg => {
-    if (msg._id !== messageId) return msg;
+const updateMessageById = (messages, messageId, updateMessage) => {
+  const messageIndex = messages.findIndex(message => message._id === messageId);
+  if (messageIndex < 0) return messages;
 
+  const currentMessage = messages[messageIndex];
+  const updatedMessage = updateMessage(currentMessage);
+  if (updatedMessage === currentMessage) return messages;
+
+  const nextMessages = messages.slice();
+  nextMessages[messageIndex] = updatedMessage;
+  return nextMessages;
+};
+
+const addUserReaction = (messages, messageId, reaction, userId) =>
+  updateMessageById(messages, messageId, msg => {
     const currentReactions = msg.reactions || {};
     const currentUsers = currentReactions[reaction] || [];
     if (currentUsers.includes(userId)) return msg;
@@ -20,9 +31,7 @@ const addUserReaction = (messages, messageId, reaction, userId) =>
   });
 
 const removeUserReaction = (messages, messageId, reaction, userId) =>
-  messages.map(msg => {
-    if (msg._id !== messageId) return msg;
-
+  updateMessageById(messages, messageId, msg => {
     const currentReactions = msg.reactions || {};
     const currentUsers = currentReactions[reaction] || [];
     if (!currentUsers.includes(userId)) return msg;
@@ -99,9 +108,9 @@ export const useReactionHandling = ({ currentUser, setMessages }) => {
 
   const handleReactionUpdate = useCallback(({ messageId, reactions }) => {
     setMessages(prevMessages =>
-      prevMessages.map(msg =>
-        msg._id === messageId ? { ...msg, reactions } : msg
-      )
+      updateMessageById(prevMessages, messageId, msg => (
+        msg.reactions === reactions ? msg : { ...msg, reactions }
+      ))
     );
   }, [setMessages]);
 

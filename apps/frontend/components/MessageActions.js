@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { LikeIcon, CopyIcon } from '@vapor-ui/icons';
 import { Button, IconButton, VStack, HStack, Box } from '@vapor-ui/core';
-import EmojiPicker from './EmojiPicker';
 import { Toast } from './Toast';
+
+const EmojiPicker = lazy(() => import('./EmojiPicker'));
 
 const FALLBACK_COPY_ELEMENT_ID = 'message-copy-fallback';
 
@@ -72,16 +73,12 @@ const MessageActions = ({
   onReactionAdd,
   onReactionRemove,
   isMine = false,
-  room = null
+  participantNamesById = null,
 }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [tooltipStates, setTooltipStates] = useState({});
-  const [leftOffset, setLeftOffset] = useState(0);
+  const [emojiPickerPosition, setEmojiPickerPosition] = useState({ top: 0, left: 0 });
   const emojiPickerRef = useRef(null);
   const emojiButtonRef = useRef(null);
-  const containerRef = useRef(null);
-  const reactionRefs = useRef({});
-  const rafId = useRef(null);
 
   const handleClickOutside = useCallback((event) => {
     const isClickInsideEmojiPicker = emojiPickerRef.current?.contains(event.target);
@@ -140,31 +137,10 @@ const MessageActions = ({
     }
   }, [messageId, reactions, currentUserId, onReactionAdd, onReactionRemove]);
 
-  const toggleTooltip = useCallback((emoji) => {
-    setTooltipStates(prev => ({
-      ...prev,
-      [emoji]: !prev[emoji]
-    }));
-  }, []);
-
-  const getReactionTooltip = useCallback((emoji, userIds) => {
-    if (!userIds || !room?.participants) {
+  const getReactionTooltip = useCallback((userIds) => {
+    if (!userIds || !participantNamesById) {
       return '';
     }
-
-    // room.participants가 배열인지 확인
-    if (!Array.isArray(room.participants)) {
-      console.warn('room.participants is not an array:', room.participants);
-      return '';
-    }
-
-    // 사용자 ID들을 문자열로 변환하여 비교하기 위한 Map 생성
-    const participantMap = new Map(
-      room.participants.map(p => [
-        String(p._id || p.id), 
-        p.name
-      ])
-    );
 
     const reactionUsers = userIds.map(userId => {
       const userIdStr = String(userId);
@@ -175,7 +151,7 @@ const MessageActions = ({
       }
       
       // 참여자 목록에서 해당 사용자 찾기
-      const userName = participantMap.get(userIdStr);
+      const userName = participantNamesById.get(userIdStr);
       return userName || '알 수 없는 사용자';
     });
 
@@ -187,7 +163,7 @@ const MessageActions = ({
     });
 
     return uniqueUsers.join(', ');
-  }, [currentUserId, room]);
+  }, [currentUserId, participantNamesById]);
 
   const renderReactions = useCallback(() => {
     if (!reactions || Object.keys(reactions).length === 0) {
@@ -199,24 +175,17 @@ const MessageActions = ({
         {Object.entries(reactions).map(([emoji, users]) => {
           const reactionId = `reaction-${messageId}-${emoji}`;
 
-          if (!reactionRefs.current[emoji]) {
-            reactionRefs.current[emoji] = React.createRef();
-          }
-
-          const tooltipContent = getReactionTooltip(emoji, users);
+          const tooltipContent = getReactionTooltip(users);
 
           return (
             <Button
               key={emoji}
-              ref={reactionRefs.current[emoji]}
               id={reactionId}
               size="sm"
               variant="ghost"
               $css={{ color: 'fg-hint-100' }}
               className="flex items-center gap-1"
               onClick={() => handleReactionSelect(emoji)}
-              onMouseEnter={() => toggleTooltip(emoji)}
-              onMouseLeave={() => toggleTooltip(emoji)}
               data-bs-toggle="tooltip"
               data-bs-placement="top"
               title={tooltipContent}
@@ -229,18 +198,13 @@ const MessageActions = ({
         })}
       </HStack>
     );
-  }, [reactions, messageId, currentUserId, tooltipStates, handleReactionSelect, toggleTooltip, getReactionTooltip]);
-
-  const toggleEmojiPicker = useCallback((e) => {    
-    e.stopPropagation();
-    setShowEmojiPicker(prev => !prev);
-  }, []);
+  }, [reactions, messageId, handleReactionSelect, getReactionTooltip]);
 
   // Calculate emoji picker position
-  const getEmojiPickerPosition = useCallback(() => {
-    if (!emojiButtonRef.current) return { top: 0, left: 0 };
-    
-    const buttonRect = emojiButtonRef.current.getBoundingClientRect();
+  const getEmojiPickerPosition = useCallback((button) => {
+    if (!button) return { top: 0, left: 0 };
+
+    const buttonRect = button.getBoundingClientRect();
     const pickerHeight = 350; // Approximate height
     const pickerWidth = 350; // Approximate width
     const buttonHeight = buttonRect.height;
@@ -267,8 +231,16 @@ const MessageActions = ({
     return { top, left };
   }, []);
 
+  const toggleEmojiPicker = useCallback((event) => {
+    event.stopPropagation();
+    if (!showEmojiPicker) {
+      setEmojiPickerPosition(getEmojiPickerPosition(event.currentTarget));
+    }
+    setShowEmojiPicker(previous => !previous);
+  }, [getEmojiPickerPosition, showEmojiPicker]);
+
   return (
-    <div className={`flex flex-col gap-2 ${isMine ? 'items-end' : 'items-start'}`} ref={containerRef}>
+    <div className={`flex flex-col gap-2 ${isMine ? 'items-end' : 'items-start'}`}>
       {renderReactions()}
 
       <HStack $css={{ gap: '$050', alignItems: 'center' }}>
@@ -293,18 +265,20 @@ const MessageActions = ({
               style={{
                 position: 'fixed',
                 zIndex: 9999,
-                ...getEmojiPickerPosition()
+                ...emojiPickerPosition
               }}
               onClick={e => e.stopPropagation()}
               data-testid="emoji-picker-container"
             >
               <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700">
-                <EmojiPicker
-                  onSelect={handleReactionSelect}
-                  emojiSize={20}
-                  perLine={8}
-                  theme="light"
-                />
+                <Suspense fallback={null}>
+                  <EmojiPicker
+                    onSelect={handleReactionSelect}
+                    emojiSize={20}
+                    perLine={8}
+                    theme="light"
+                  />
+                </Suspense>
               </div>
             </div>,
             document.body
@@ -334,7 +308,7 @@ MessageActions.defaultProps = {
   onReactionAdd: () => {},
   onReactionRemove: () => {},
   isMine: false,
-  room: null
+  participantNamesById: null,
 };
 
 export default React.memo(MessageActions);

@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Spinner, Text, VStack } from '@vapor-ui/core';
 import SystemMessage from './SystemMessage';
 import FileMessage from './FileMessage';
@@ -7,6 +7,8 @@ import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { useVirtualMessageList } from '../hooks/useVirtualMessageList';
 import { useReadReceiptBatch } from '../features/chat/room/useReadReceiptBatch';
+
+const EMPTY_PARTICIPANTS = Object.freeze([]);
 
 const LoadingIndicator = React.memo(() => (
   <div className="loading-messages">
@@ -32,9 +34,10 @@ const EmptyMessages = React.memo(() => (
 EmptyMessages.displayName = 'EmptyMessages';
 
 const VirtualMessageRow = React.memo(({
-  children,
   index,
   itemKey,
+  message,
+  renderMessage,
   start,
   totalCount,
 }) => {
@@ -53,7 +56,7 @@ const VirtualMessageRow = React.memo(({
         width: '100%',
       }}
     >
-      {children}
+      {renderMessage(message)}
     </div>
   );
 });
@@ -71,7 +74,7 @@ const ChatMessages = ({
   onReactionRemove = () => {},
   onLoadMore = () => {}
 }) => {
-  const currentUserId = currentUser?.id;
+  const currentUserId = currentUser?.id || currentUser?._id;
 
   // 무한 스크롤 훅
   const { sentinelRef } = useInfiniteScroll(
@@ -81,7 +84,7 @@ const ChatMessages = ({
   );
 
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
-  const { containerRef, scrollToBottom, isNearBottom } = useAutoScroll(
+  const { containerRef } = useAutoScroll(
     messages,
     currentUserId,
     loadingMessages,
@@ -99,14 +102,50 @@ const ChatMessages = ({
     );
   }, [currentUserId]);
 
-  const allMessages = useMemo(() => {
-    if (!Array.isArray(messages)) return [];
+  // 메시지 상태는 수신·페이지 병합 단계에서 시간순을 보장한다.
+  // 렌더마다 전체 목록을 복사하고 다시 정렬하지 않는다.
+  const allMessages = Array.isArray(messages) ? messages : [];
 
-    return [...messages].sort((a, b) => {
-      if (!a?.timestamp || !b?.timestamp) return 0;
-      return new Date(a.timestamp) - new Date(b.timestamp);
+  const participants = room?.participants || EMPTY_PARTICIPANTS;
+  const participantNamesById = useMemo(() => {
+    const names = new Map();
+    participants.forEach(participant => {
+      const participantId = participant?._id || participant?.id;
+      if (participantId) names.set(String(participantId), participant?.name);
     });
-  }, [messages]);
+    return names;
+  }, [participants]);
+
+  const sortedReadTimestamps = useMemo(() => (
+    participants
+      .map(participant => {
+        const cursor = readCursors?.[participant?._id] ?? readCursors?.[participant?.id];
+        if (typeof cursor === 'number') return cursor;
+        const parsedCursor = Date.parse(cursor);
+        return Number.isFinite(parsedCursor) ? parsedCursor : -1;
+      })
+      .sort((left, right) => left - right)
+  ), [participants, readCursors]);
+
+  const getUnreadCount = useCallback((timestamp) => {
+    const normalizedTimestamp = typeof timestamp === 'number'
+      ? timestamp
+      : Date.parse(timestamp);
+    if (!Number.isFinite(normalizedTimestamp)) return sortedReadTimestamps.length;
+
+    // 읽음 커서 배열에서 메시지 시각보다 작은 값의 개수를 이진 탐색한다.
+    let low = 0;
+    let high = sortedReadTimestamps.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (sortedReadTimestamps[middle] < normalizedTimestamp) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
+  }, [sortedReadTimestamps]);
 
   const getMessageKey = useCallback(
     (message, index) => message?._id || message?.id || `msg-${index}`,
@@ -124,20 +163,20 @@ const ChatMessages = ({
     getItemKey: getMessageKey,
   });
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isVirtualized || !listRef.current) return;
 
     const list = listRef.current;
     const rows = Array.from(list.querySelectorAll('[data-virtual-message-key]'));
-    const measureRows = (elements) => {
-      measureItems(elements.map(element => ({
-        key: element.dataset.virtualMessageKey,
-        size: element.getBoundingClientRect().height,
-      })));
-    };
-    measureRows(rows);
-
-    if (typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === 'undefined') {
+      const frameId = requestAnimationFrame(() => {
+        measureItems(rows.map(element => ({
+          key: element.dataset.virtualMessageKey,
+          size: element.getBoundingClientRect().height,
+        })));
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
 
     const observer = new ResizeObserver((entries) => {
       measureItems(entries.map(({ target, contentRect }) => ({
@@ -150,16 +189,70 @@ const ChatMessages = ({
     return () => observer.disconnect();
   }, [isVirtualized, listRef, measureItems, virtualItems]);
 
+  const rawCurrentUserReadTimestamp = readCursors?.[currentUserId];
+  const parsedCurrentUserReadTimestamp = typeof rawCurrentUserReadTimestamp === 'number'
+    ? rawCurrentUserReadTimestamp
+    : Date.parse(rawCurrentUserReadTimestamp);
+  const currentUserReadTimestamp = Number.isFinite(parsedCurrentUserReadTimestamp)
+    ? parsedCurrentUserReadTimestamp
+    : -1;
+  useEffect(() => {
+    const container = containerRef.current;
+    const messageRoot = isVirtualized ? listRef.current : container;
+    if (!container || !messageRoot || !currentUserId || typeof IntersectionObserver === 'undefined') {
+      return undefined;
+    }
+
+    const readableMessages = Array.from(
+      messageRoot.querySelectorAll('[data-readable-message-id]')
+    );
+    if (readableMessages.length === 0) return undefined;
+
+    const observer = new IntersectionObserver((entries) => {
+      let newestVisibleMessage = null;
+
+      entries.forEach(entry => {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.5) return;
+
+        const messageId = entry.target.dataset.readableMessageId;
+        const timestamp = Number(entry.target.dataset.readableMessageTimestamp);
+        if (!messageId || !Number.isFinite(timestamp) || timestamp <= currentUserReadTimestamp) return;
+
+        if (!newestVisibleMessage || timestamp > newestVisibleMessage.timestamp) {
+          newestVisibleMessage = { messageId, timestamp };
+        }
+      });
+
+      if (newestVisibleMessage) {
+        queueReadReceipt(newestVisibleMessage.messageId, newestVisibleMessage.timestamp);
+      }
+    }, {
+      root: container,
+      rootMargin: '0px',
+      threshold: 0.5,
+    });
+
+    readableMessages.forEach(element => observer.observe(element));
+    return () => observer.disconnect();
+  }, [
+    allMessages.length,
+    containerRef,
+    currentUserId,
+    currentUserReadTimestamp,
+    isVirtualized,
+    listRef,
+    queueReadReceipt,
+    virtualItems,
+  ]);
+
   const renderMessage = useCallback((msg) => {
     if (!msg) return null;
 
     const commonProps = {
       currentUser,
-      room,
-      cursors: readCursors,
+      participantNamesById,
       onReactionAdd,
       onReactionRemove,
-      onMessageRead: queueReadReceipt,
     };
 
     const MessageComponent = {
@@ -174,9 +267,10 @@ const ChatMessages = ({
         content={msg.content}
         isMine={msg.type !== 'system' ? isMine(msg) : undefined}
         isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
+        unreadCount={msg.type !== 'system' ? getUnreadCount(msg.timestamp) : undefined}
       />
     );
-  }, [currentUser, room, readCursors, isMine, onReactionAdd, onReactionRemove, queueReadReceipt]);
+  }, [currentUser, getUnreadCount, isMine, onReactionAdd, onReactionRemove, participantNamesById]);
 
   const renderedMessages = isVirtualized ? (
     <div
@@ -196,11 +290,11 @@ const ChatMessages = ({
           key={key}
           index={index}
           itemKey={key}
+          message={item}
+          renderMessage={renderMessage}
           start={start}
           totalCount={allMessages.length}
-        >
-          {renderMessage(item)}
-        </VirtualMessageRow>
+        />
       ))}
     </div>
   ) : (
@@ -220,7 +314,7 @@ const ChatMessages = ({
   return (
     <VStack
       ref={containerRef}
-      className="h-full overflow-y-auto overflow-x-hidden scroll-smooth [overflow-scrolling:touch]"
+      className="h-full overflow-y-auto overflow-x-hidden [overflow-scrolling:touch]"
       $css={{
         gap: '$200',
         padding: '$300',

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export const MESSAGE_VIRTUALIZATION_THRESHOLD = 100;
+export const MESSAGE_VIRTUALIZATION_THRESHOLD = 20;
 export const ESTIMATED_MESSAGE_HEIGHT = 176;
 export const MESSAGE_OVERSCAN = 3;
 
