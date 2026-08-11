@@ -27,6 +27,9 @@ COPY apps/frontend/services apps/frontend/services
 COPY apps/frontend/styles apps/frontend/styles
 COPY apps/frontend/utils apps/frontend/utils
 
+ARG NEXT_PUBLIC_FILE_UPLOAD_MODE=server
+ENV NEXT_PUBLIC_FILE_UPLOAD_MODE=${NEXT_PUBLIC_FILE_UPLOAD_MODE}
+
 RUN pnpm --dir apps/frontend build
 
 # Stage 2: Runner
