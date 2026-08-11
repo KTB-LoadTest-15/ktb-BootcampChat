@@ -38,9 +38,12 @@ public class RoomService {
             // MongoDB에서 최신순으로 정렬된 방 목록을 조회한다
             List<Room> rooms = roomRepository.findAllByOrderByCreatedAtDesc();
             Map<String, User> usersById = loadUsersById(rooms);
+            Map<String, Long> recentMessageCounts = recentMessageCounter.countRecentMessages(
+                    rooms.stream().map(Room::getId).toList());
 
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById))
+                .map(room -> mapToRoomResponse(room, name, usersById,
+                        recentMessageCounts.getOrDefault(room.getId(), 0L).intValue()))
                 .collect(Collectors.toList());
 
             PageMetadata metadata = PageMetadata.builder()
@@ -192,6 +195,12 @@ public class RoomService {
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name, Map<String, User> usersById) {
+        return mapToRoomResponse(room, name, usersById,
+                recentMessageCounter.countRecentMessages(room.getId()));
+    }
+
+    private RoomResponse mapToRoomResponse(
+            Room room, String name, Map<String, User> usersById, int recentMessageCount) {
         if (room == null) return null;
 
         User creator = usersById.get(room.getCreator());
@@ -202,8 +211,6 @@ public class RoomService {
             .map(usersById::get)
             .filter(java.util.Objects::nonNull)
             .toList();
-
-        int recentMessageCount = recentMessageCounter.countRecentMessages(room.getId());
 
         return RoomResponse.builder()
             .id(room.getId())

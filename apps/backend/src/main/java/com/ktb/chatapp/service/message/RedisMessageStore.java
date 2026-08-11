@@ -4,7 +4,9 @@ import com.ktb.chatapp.model.Message;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -13,8 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Component;
 
@@ -43,8 +47,10 @@ public class RedisMessageStore implements MessageStore {
     private final ZSetOperations<String, String> zSetOps;
     private final SetOperations<String, String> setOps;
     private final MessageCodec codec;
+    private final StringRedisTemplate redisTemplate;
 
     public RedisMessageStore(StringRedisTemplate redisTemplate, MessageCodec codec) {
+        this.redisTemplate = redisTemplate;
         this.hashOps = redisTemplate.opsForHash();
         this.zSetOps = redisTemplate.opsForZSet();
         this.setOps = redisTemplate.opsForSet();
@@ -139,6 +145,34 @@ public class RedisMessageStore implements MessageStore {
     public long countRecentMessages(String roomId, LocalDateTime since) {
         Long count = zSetOps.count(roomIndexKey(roomId), (double) toMillis(since), Double.POSITIVE_INFINITY);
         return count == null ? 0L : count;
+    }
+
+    @Override
+    public Map<String, Long> countRecentMessages(Collection<String> roomIds, LocalDateTime since) {
+        List<String> ids = roomIds.stream().distinct().toList();
+        Map<String, Long> counts = new LinkedHashMap<>();
+        if (ids.isEmpty()) {
+            return counts;
+        }
+
+        double minScore = (double) toMillis(since);
+        List<Object> results = redisTemplate.executePipelined(new SessionCallback<>() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Object execute(RedisOperations operations) {
+                ZSetOperations<String, String> pipelinedZSetOps = operations.opsForZSet();
+                for (String roomId : ids) {
+                    pipelinedZSetOps.count(roomIndexKey(roomId), minScore, Double.POSITIVE_INFINITY);
+                }
+                return null;
+            }
+        });
+
+        for (int i = 0; i < ids.size(); i++) {
+            Object result = results.get(i);
+            counts.put(ids.get(i), result instanceof Number number ? number.longValue() : 0L);
+        }
+        return counts;
     }
 
     @Override

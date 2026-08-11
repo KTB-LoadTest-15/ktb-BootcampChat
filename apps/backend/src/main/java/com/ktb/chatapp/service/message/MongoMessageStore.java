@@ -3,7 +3,10 @@ package com.ktb.chatapp.service.message;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.repository.MessageRepository;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
@@ -16,6 +19,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.AggregationExpression;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -113,6 +117,29 @@ public class MongoMessageStore implements MessageStore {
     @Override
     public long countRecentMessages(String roomId, LocalDateTime since) {
         return messageRepository.countRecentMessagesByRoomId(roomId, since);
+    }
+
+    @Override
+    public Map<String, Long> countRecentMessages(Collection<String> roomIds, LocalDateTime since) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        roomIds.forEach(roomId -> counts.putIfAbsent(roomId, 0L));
+        if (counts.isEmpty()) {
+            return counts;
+        }
+
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.match(Criteria.where("room").in(counts.keySet())
+                        .and("timestamp").gte(since)),
+                Aggregation.group("room").count().as("count"));
+        for (Document result : mongoTemplate
+                .aggregate(aggregation, Message.class, Document.class).getMappedResults()) {
+            Object roomId = result.get("_id");
+            Object count = result.get("count");
+            if (roomId != null && count instanceof Number number) {
+                counts.put(roomId.toString(), number.longValue());
+            }
+        }
+        return counts;
     }
 
     @Override
