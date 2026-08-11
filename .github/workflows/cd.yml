@@ -1,0 +1,203 @@
+name: CD
+
+on:
+  # 자동 배포는 막고 수동 실행만 허용한다.
+  workflow_dispatch: {}
+
+concurrency:
+  # production 배포는 한 번에 하나만 진행
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BACKEND_IMAGE: ghcr.io/ktb-loadtest-15/ktb-bootcampchat-backend
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        # 커밋 추적 가능한 immutable tag
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  deploy:
+    needs: build-backend
+    # 이미지 빌드가 성공한 커밋만 production 승인 단계로
+    if: needs.build-backend.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub Actions 러너가 bastion을 거쳐 각 backend 서버로 SSH/SCP 접속할 수 있게 준비
+      - name: Configure SSH for bastion hop
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          BASTION_HOST: ${{ secrets.BASTION_HOST }}
+          BASTION_USER: ${{ secrets.BASTION_USER }}
+          BACKEND_HOSTS: ${{ secrets.BACKEND_HOSTS }}
+        run: |
+          set -euo pipefail
+          
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          ssh-keyscan -H "$BASTION_HOST" >> ~/.ssh/known_hosts
+
+          cat >> ~/.ssh/config <<EOF
+          Host bastion
+            HostName $BASTION_HOST
+            User $BASTION_USER
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+          Host *
+            User ubuntu
+            IdentityFile ~/.ssh/deploy_key
+            ProxyJump bastion
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+          for host in $BACKEND_HOSTS; do
+            ssh bastion "ssh-keyscan -H '$host'" >> ~/.ssh/known_hosts
+          done
+
+      - name: Write backend .env to target hosts
+        env:
+          BACKEND_HOSTS: ${{ secrets.BACKEND_HOSTS }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          ENCRYPTION_SALT: ${{ secrets.ENCRYPTION_SALT }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+
+          cat > "$env_file" <<EOF
+          JWT_SECRET=$JWT_SECRET
+          ENCRYPTION_KEY=$ENCRYPTION_KEY
+          ENCRYPTION_SALT=$ENCRYPTION_SALT
+          MONGO_URI=$MONGO_URI
+          REDIS_HOST=$REDIS_HOST
+          REDIS_PORT=$REDIS_PORT
+          REDIS_PASSWORD=$REDIS_PASSWORD
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          PORT=5001
+          WS_PORT=5002
+          EOF
+
+          for host in $BACKEND_HOSTS; do
+            ssh "$host" "mkdir -p ~/ktb-chat-backend"
+            scp "$env_file" "$host:~/ktb-chat-backend/.env"
+            ssh "$host" "chmod 600 ~/ktb-chat-backend/.env"
+          done
+
+      # 전체 동시 배포. 한 대라도 실패하면 성공한 호스트도 즉시 롤백한다.
+      - name: Upload deploy script and roll out new image
+        env:
+          BACKEND_HOSTS: ${{ secrets.BACKEND_HOSTS }}
+          IMAGE_REF: ${{ env.BACKEND_IMAGE }}:${{ needs.build-backend.outputs.tag }}
+        run: |
+          set -euo pipefail
+          pids=""
+          result_dir="$(mktemp -d)"
+          trap 'rm -rf "$result_dir"' EXIT
+
+          for host in $BACKEND_HOSTS; do
+            (
+              if scp apps/backend/docker-control.sh "$host:~/ktb-chat-backend/docker-control.sh" &&
+                ssh "$host" "chmod +x ~/ktb-chat-backend/docker-control.sh && cd ~/ktb-chat-backend && IMAGE_REF=$IMAGE_REF ./docker-control.sh deploy"; then
+                echo "success" > "$result_dir/$host"
+              else
+                echo "failed" > "$result_dir/$host"
+                exit 1
+              fi
+            ) &
+            pids="$pids $!"
+          done
+
+          fail=0
+          for pid in $pids; do
+            wait "$pid" || fail=1
+          done
+
+          total=0
+          success_hosts=""
+          failed_hosts=""
+          for host in $BACKEND_HOSTS; do
+            total=$((total + 1))
+            if [ -f "$result_dir/$host" ] && [ "$(cat "$result_dir/$host")" = "success" ]; then
+              success_hosts="$success_hosts $host"
+            else
+              failed_hosts="$failed_hosts $host"
+            fi
+          done
+
+          success_count=0
+          failed_count=0
+          for _ in $success_hosts; do
+            success_count=$((success_count + 1))
+          done
+          for _ in $failed_hosts; do
+            failed_count=$((failed_count + 1))
+          done
+
+          echo "배포 요약: 전체=$total 성공=$success_count 실패=$failed_count"
+          if [ -n "$success_hosts" ]; then
+            echo "배포 성공 호스트:$success_hosts"
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "배포 실패 호스트:$failed_hosts"
+            if [ -n "$success_hosts" ]; then
+              echo "성공 호스트 자동 롤백 시작:$success_hosts"
+              rollback_fail=0
+              for host in $success_hosts; do
+                if ! ssh "$host" "cd ~/ktb-chat-backend && ./docker-control.sh rollback"; then
+                  rollback_fail=1
+                  echo "::error::롤백 실패 호스트:$host"
+                fi
+              done
+              if [ "$rollback_fail" -eq 1 ]; then
+                echo "::error::성공 호스트 중 일부 롤백이 실패했습니다."
+              fi
+            fi
+            echo "::error::다음 호스트에서 배포 또는 헬스체크가 실패했습니다:$failed_hosts"
+            exit 1
+          fi
