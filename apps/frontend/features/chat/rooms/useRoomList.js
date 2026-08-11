@@ -2,6 +2,74 @@ import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
+export const ROOM_JOIN_METRIC_PREFIX = '[room-join-metric]';
+const ROOM_JOIN_NAVIGATION_TIMEOUT_MS = 5000;
+const ROOM_JOIN_NAVIGATION_POLL_MS = 50;
+
+const now = () => (
+  typeof performance !== 'undefined' ? performance.now() : Date.now()
+);
+
+const currentPathname = () => (
+  typeof window !== 'undefined' ? window.location.pathname : null
+);
+
+const createTraceId = () => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `room-join-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const logRoomJoinMetric = (event, details) => {
+  const payload = {
+    event,
+    recordedAt: new Date().toISOString(),
+    ...details,
+  };
+
+  // JSON 한 줄로 남겨야 Playwright/Artillery가 브라우저 콘솔에서 그대로 수집할 수 있다.
+  console.info(`${ROOM_JOIN_METRIC_PREFIX} ${JSON.stringify(payload)}`);
+};
+
+const observeNavigation = ({ traceId, roomId, startedAt }) => {
+  if (typeof window === 'undefined') return;
+
+  const targetPath = `/chat/${roomId}`;
+
+  const checkPath = () => {
+    const durationMs = Math.round(now() - startedAt);
+    const pathname = currentPathname();
+
+    if (pathname === targetPath) {
+      logRoomJoinMetric('navigation_complete', {
+        traceId,
+        roomId,
+        targetPath,
+        pathname,
+        durationMs,
+      });
+      return;
+    }
+
+    if (durationMs >= ROOM_JOIN_NAVIGATION_TIMEOUT_MS) {
+      logRoomJoinMetric('navigation_timeout', {
+        traceId,
+        roomId,
+        targetPath,
+        pathname,
+        durationMs,
+      });
+      return;
+    }
+
+    window.setTimeout(checkPath, ROOM_JOIN_NAVIGATION_POLL_MS);
+  };
+
+  window.setTimeout(checkPath, 0);
+};
+
 export const useRoomList = ({
   currentUser,
   router,
@@ -154,7 +222,25 @@ export const useRoomList = ({
   }, [currentUser, loadRooms]);
 
   const handleJoinRoom = useCallback(async (roomId) => {
+    const traceId = createTraceId();
+    const attemptStartedAt = now();
+
+    logRoomJoinMetric('attempt', {
+      traceId,
+      roomId,
+      connectionStatus,
+      pathname: currentPathname(),
+    });
+
     if (connectionStatus !== CONNECTION_STATUS.CONNECTED) {
+      logRoomJoinMetric('connection_blocked', {
+        traceId,
+        roomId,
+        connectionStatus,
+        pathname: currentPathname(),
+        durationMs: Math.round(now() - attemptStartedAt),
+      });
+
       setError({
         title: '채팅방 입장 실패',
         message: '서버와 연결이 끊어져 있습니다.',
@@ -166,12 +252,76 @@ export const useRoomList = ({
     setJoiningRoom(true);
 
     try {
+      const requestStartedAt = now();
+      logRoomJoinMetric('request_start', {
+        traceId,
+        roomId,
+        pathname: currentPathname(),
+      });
+
       const response = await axiosInstance.post(`/api/rooms/${roomId}/join`, {});
+      const requestDurationMs = Math.round(now() - requestStartedAt);
+
+      logRoomJoinMetric('request_complete', {
+        traceId,
+        roomId,
+        status: response.status,
+        success: Boolean(response.data?.success),
+        retryCount: response.config?.retryCount || 0,
+        durationMs: requestDurationMs,
+      });
 
       if (response.data.success) {
-        router.push(`/chat/${roomId}`);
+        const navigationStartedAt = now();
+        const targetPath = `/chat/${roomId}`;
+
+        logRoomJoinMetric('navigation_start', {
+          traceId,
+          roomId,
+          targetPath,
+          pathname: currentPathname(),
+          elapsedSinceAttemptMs: Math.round(navigationStartedAt - attemptStartedAt),
+        });
+
+        const navigationResult = router.push(targetPath);
+        if (navigationResult?.catch) {
+          navigationResult.catch((navigationError) => {
+            logRoomJoinMetric('navigation_error', {
+              traceId,
+              roomId,
+              targetPath,
+              pathname: currentPathname(),
+              durationMs: Math.round(now() - navigationStartedAt),
+              message: navigationError?.message || 'Unknown navigation error',
+            });
+          });
+        }
+
+        observeNavigation({
+          traceId,
+          roomId,
+          startedAt: navigationStartedAt,
+        });
+      } else {
+        logRoomJoinMetric('request_rejected', {
+          traceId,
+          roomId,
+          status: response.status,
+          retryCount: response.config?.retryCount || 0,
+          durationMs: requestDurationMs,
+        });
       }
     } catch (error) {
+      logRoomJoinMetric('request_error', {
+        traceId,
+        roomId,
+        status: error.status || error.response?.status || 0,
+        retryCount: error.config?.retryCount || 0,
+        durationMs: Math.round(now() - attemptStartedAt),
+        code: error.code || error.response?.data?.code || null,
+        message: error.message || 'Unknown room join error',
+      });
+
       let errorMessage = '입장에 실패했습니다.';
       if (error.response?.status === 404) {
         errorMessage = '채팅방을 찾을 수 없습니다.';

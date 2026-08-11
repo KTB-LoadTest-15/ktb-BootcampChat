@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosInstance from '@/services/axios';
 import { useRoomList } from '../useRoomList';
 import { CONNECTION_STATUS } from '../useServerConnection';
@@ -13,12 +13,15 @@ vi.mock('@/services/axios', () => ({
 
 const roomsResponse = (rooms) => ({ data: { data: rooms } });
 
-const renderRoomList = () =>
+const renderRoomList = ({
+  router = { push: vi.fn() },
+  connectionStatus = CONNECTION_STATUS.CONNECTED,
+} = {}) =>
   renderHook(() =>
     useRoomList({
       currentUser: { token: 'token-1' },
-      router: { push: vi.fn() },
-      connectionStatus: CONNECTION_STATUS.CONNECTED,
+      router,
+      connectionStatus,
       setConnectionStatus: vi.fn(),
     })
   );
@@ -26,6 +29,45 @@ const renderRoomList = () =>
 describe('useRoomList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    window.history.pushState({}, '', '/');
+  });
+
+  it('logs the join response and completed navigation with one trace', async () => {
+    vi.useFakeTimers();
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const router = {
+      push: vi.fn((path) => {
+        window.history.pushState({}, '', path);
+      }),
+    };
+    axiosInstance.post.mockResolvedValue({
+      status: 200,
+      data: { success: true },
+      config: { retryCount: 1 },
+    });
+
+    const { result } = renderRoomList({ router });
+
+    await act(async () => {
+      await result.current.handleJoinRoom('room-1');
+      await vi.runAllTimersAsync();
+    });
+
+    const metricLogs = consoleInfo.mock.calls.map(([message]) => message);
+    const responseLog = metricLogs.find((message) => message.includes('"event":"request_complete"'));
+    const navigationLog = metricLogs.find((message) => message.includes('"event":"navigation_complete"'));
+
+    expect(axiosInstance.post).toHaveBeenCalledWith('/api/rooms/room-1/join', {});
+    expect(router.push).toHaveBeenCalledWith('/chat/room-1');
+    expect(responseLog).toContain('"status":200');
+    expect(responseLog).toContain('"retryCount":1');
+    expect(navigationLog).toContain('"pathname":"/chat/room-1"');
+
   });
 
   it('replaces the list on refresh without leaving the refreshing flag on', async () => {

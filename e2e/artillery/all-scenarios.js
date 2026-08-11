@@ -9,6 +9,26 @@ const {
     fullProfileUpdateScenario,
 } = require('./scenarios/profile.scenario.js');
 
+const ROOM_JOIN_METRIC_PREFIX = '[room-join-metric]';
+
+function collectRoomJoinBrowserLogs(page, vuContext) {
+    page.on('console', (message) => {
+        const text = message.text();
+        if (!text.startsWith(ROOM_JOIN_METRIC_PREFIX)) return;
+
+        const serializedMetric = text.slice(ROOM_JOIN_METRIC_PREFIX.length).trim();
+        try {
+            const metric = JSON.parse(serializedMetric);
+            console.log(`${ROOM_JOIN_METRIC_PREFIX} ${JSON.stringify({
+                ...metric,
+                loadScenario: vuContext.vars.currentScenario || null,
+            })}`);
+        } catch {
+            console.log(text);
+        }
+    });
+}
+
 function generateUserSchema() {
     const timestamp = Date.now();
     const randomId = Math.random().toString(36).substring(2, 8);
@@ -52,8 +72,11 @@ const allScenariosFlat = [
 async function allScenarios(page, vuContext) {
     const testUser = generateUserSchema();
     vuContext.vars.testUser = testUser;
+    collectRoomJoinBrowserLogs(page, vuContext);
 
     for (const scenario of allScenariosFlat) {
+        vuContext.vars.currentScenario = scenario.name;
+
         try {
             await scenario(page, vuContext);
         } catch (err) {
