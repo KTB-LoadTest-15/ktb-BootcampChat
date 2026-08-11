@@ -21,6 +21,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -93,8 +94,10 @@ public class AuthController {
         ResponseEntity<?> errors = getBindingError(bindingResult);
         if (errors != null) return errors;
         
+        String normalizedEmail = registerRequest.getEmail().toLowerCase(Locale.ROOT);
+
         // Check existing user
-        if (userRepository.findByEmail(registerRequest.getEmail()).isPresent()) {
+        if (userRepository.findByEmail(normalizedEmail).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(StandardResponse.error("이미 등록된 이메일입니다."));
         }
@@ -103,18 +106,11 @@ public class AuthController {
             // Create user
             User user = User.builder()
                     .name(registerRequest.getName())
-                    .email(registerRequest.getEmail().toLowerCase())
+                    .email(normalizedEmail)
                     .password(passwordEncoder.encode(registerRequest.getPassword()))
                     .build();
 
             user = userRepository.save(user);
-
-            // Create session with metadata
-            SessionMetadata metadata = new SessionMetadata(
-                    request.getHeader("User-Agent"),
-                    getClientIpAddress(request),
-                    request.getHeader("User-Agent")
-            );
 
             LoginResponse response = LoginResponse.builder()
                     .success(true)
