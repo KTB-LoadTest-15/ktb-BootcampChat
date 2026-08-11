@@ -29,7 +29,9 @@ const renderRoomsSocket = (socket, overrides = {}) => {
 };
 
 const createSocket = () => ({
+  connected: true,
   on: vi.fn(),
+  off: vi.fn(),
   emit: vi.fn(),
   disconnect: vi.fn(),
 });
@@ -42,31 +44,46 @@ describe('useRoomsSocket', () => {
     vi.clearAllMocks();
   });
 
-  it('does not emit joinRoomList because the server joins room-list on connect', async () => {
-    const socket = {
-      on: vi.fn(),
-      emit: vi.fn(),
-      disconnect: vi.fn(),
-    };
+  it('subscribes to room-list on mount and resubscribes after reconnect', async () => {
+    const socket = createSocket();
+    const setConnectionStatus = vi.fn();
 
-    renderRoomsSocket(socket);
+    renderRoomsSocket(socket, { setConnectionStatus });
 
     await waitFor(() => {
-      expect(socket.on).toHaveBeenCalledWith('connect', expect.any(Function));
+      expect(socket.emit).toHaveBeenCalledWith('subscribeRoomList');
     });
 
-    const connectHandler = socket.on.mock.calls.find(([event]) => event === 'connect')[1];
-    connectHandler();
+    expect(socket.emit).toHaveBeenCalledTimes(1);
+    expect(setConnectionStatus).toHaveBeenCalledWith('connected');
 
-    expect(socket.emit).not.toHaveBeenCalledWith('joinRoomList');
+    handlerFor(socket, 'connect')();
+
+    expect(socket.emit).toHaveBeenCalledTimes(2);
+    expect(socket.emit).toHaveBeenLastCalledWith('subscribeRoomList');
+  });
+
+  it('unsubscribes and removes list listeners without disconnecting the shared socket', async () => {
+    const socket = createSocket();
+    const { unmount } = renderRoomsSocket(socket);
+
+    await waitFor(() => {
+      expect(socket.emit).toHaveBeenCalledWith('subscribeRoomList');
+    });
+
+    const registeredHandlers = [...socket.on.mock.calls];
+
+    unmount();
+
+    expect(socket.emit).toHaveBeenLastCalledWith('unsubscribeRoomList');
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    for (const [event, handler] of registeredHandlers) {
+      expect(socket.off).toHaveBeenCalledWith(event, handler);
+    }
   });
 
   it('does not register roomDeleted without a server-side room delete event', async () => {
-    const socket = {
-      on: vi.fn(),
-      emit: vi.fn(),
-      disconnect: vi.fn(),
-    };
+    const socket = createSocket();
 
     renderRoomsSocket(socket);
 

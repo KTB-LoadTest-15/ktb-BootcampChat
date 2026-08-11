@@ -38,7 +38,6 @@ const allScenariosFlat = [
     fullProfileUpdateScenario,
 ];
 
-
 /**
  * 통합 시나리오 순차 실행
  * 모든 개별 시나리오를 순서대로 실행

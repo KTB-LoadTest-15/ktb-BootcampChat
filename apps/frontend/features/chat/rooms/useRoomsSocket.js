@@ -17,29 +17,30 @@ export const useRoomsSocket = ({
   useEffect(() => {
     if (!currentUser?.token) return;
 
-    let isSubscribed = true;
+    let isActive = true;
+    let activeSocket = null;
+    let activeHandlers = null;
 
     const connectSocket = async () => {
       try {
-        const socket = await socketClient
-          .connect({
-            auth: {
-              token: currentUser.token,
-              sessionId: currentUser.sessionId,
-            },
-          })
-          .catch((err) => {
-            console.log('Socket connection error:', err);
-            setConnectionStatus(CONNECTION_STATUS.ERROR);
-          });
+        const socket = await socketClient.connect({
+          auth: {
+            token: currentUser.token,
+            sessionId: currentUser.sessionId,
+          },
+        });
 
-        if (!isSubscribed || !socket) return;
+        if (!isActive || !socket) return;
 
+        activeSocket = socket;
         socketRef.current = socket;
 
         const handlers = {
           connect: () => {
+            if (!isActive) return;
+
             setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+            socket.emit('subscribeRoomList');
           },
           disconnect: () => {
             setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);
@@ -70,12 +71,20 @@ export const useRoomsSocket = ({
             );
           },
         };
+        activeHandlers = handlers;
 
         Object.entries(handlers).forEach(([event, handler]) => {
           socket.on(event, handler);
         });
+
+        // connect()는 최초 connect 이벤트가 끝난 뒤 resolve되므로 즉시 구독한다.
+        // 이후 재연결에서는 위 connect 핸들러가 다시 구독한다.
+        setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+        socket.emit('subscribeRoomList');
       } catch (error) {
-        if (!isSubscribed) return;
+        if (!isActive) return;
+
+        console.log('Socket connection error:', error);
 
         if (
           error.message?.includes('Authentication required') ||
@@ -91,9 +100,19 @@ export const useRoomsSocket = ({
     connectSocket();
 
     return () => {
-      isSubscribed = false;
-      if (socketRef.current) {
-        socketRef.current.disconnect();
+      isActive = false;
+
+      if (activeSocket && activeHandlers) {
+        Object.entries(activeHandlers).forEach(([event, handler]) => {
+          activeSocket.off(event, handler);
+        });
+      }
+
+      if (activeSocket?.connected) {
+        activeSocket.emit('unsubscribeRoomList');
+      }
+
+      if (socketRef.current === activeSocket) {
         socketRef.current = null;
       }
     };
