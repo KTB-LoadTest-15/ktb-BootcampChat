@@ -1,4 +1,7 @@
 const path = require('path');
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
 
 const workspaceRoot = path.join(__dirname, '../..');
 const additionalDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || '')
@@ -36,4 +39,4 @@ const nextConfig = {
   outputFileTracingRoot: workspaceRoot
 };
 
-module.exports = nextConfig;
+module.exports = withBundleAnalyzer(nextConfig);
