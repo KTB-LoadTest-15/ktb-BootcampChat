@@ -66,4 +66,22 @@ describe('ChatInput', () => {
     });
     expect(input).toHaveValue('');
   });
+
+  it('keeps the input and send button disabled until the room is ready', () => {
+    const onSubmit = vi.fn();
+    const { getByTestId } = render(
+      <ChatInput
+        onSubmit={onSubmit}
+        disabled={true}
+        fileInputRef={{ current: null }}
+        room={{ participants: [] }}
+      />
+    );
+
+    const input = getByTestId('chat-message-input');
+    const sendButton = getByTestId('chat-send-button');
+
+    expect(input).toBeDisabled();
+    expect(sendButton).toBeDisabled();
+  });
 });

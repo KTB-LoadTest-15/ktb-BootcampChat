@@ -13,6 +13,7 @@ vi.mock('../useChatRoom', () => ({
     messageLoadError: null,
     retryMessageLoad: vi.fn(),
     currentUser: { _id: 'user-1', name: 'Tester' },
+    inputReady: true,
     message: '',
     showEmojiPicker: false,
     showMentionList: false,
@@ -53,7 +54,7 @@ vi.mock('@/components/ChatMessages', () => ({
 }));
 
 vi.mock('@/components/ChatInput', () => ({
-  default: () => <div>chat input</div>,
+  default: ({ disabled }) => <div>chat input: {disabled ? 'disabled' : 'enabled'}</div>,
 }));
 
 describe('ChatRoomView', () => {
@@ -63,6 +64,7 @@ describe('ChatRoomView', () => {
     // 재연결은 복구 가능한 상태다. 메시지를 유지하고 상태는 배지에 맡긴다.
     expect(screen.getByText('chat messages')).toBeInTheDocument();
     expect(screen.getByText('room info: disconnected')).toBeInTheDocument();
+    expect(screen.getByText('chat input: enabled')).toBeInTheDocument();
     expect(screen.queryByText(/연결이 끊어졌습니다/)).not.toBeInTheDocument();
   });
 });

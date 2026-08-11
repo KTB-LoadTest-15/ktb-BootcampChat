@@ -26,6 +26,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
     retryMessageLoad,
     currentUser,
     uploading,
+    inputReady,
     fileInputRef,
     handleMessageSubmit,
     loading,
@@ -182,16 +183,15 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
 
       {/* 입력 영역 */}
       {/*
-        입력창을 connectionStatus 로 disable 하지 않는다. 부하 중 connectionStatus(React 상태)가
-        실제 socket.connected 보다 뒤처지면, 소켓은 붙어 있는데도 입력창/전송이 막혀
-        chat-send-button 이 눌리지 않는 문제가 있었다(30s 타임아웃). 전송 경로(useMessageHandling)는
-        실제 socket.connected 를 확인하고 끊김이면 토스트로 알리므로, 연결 상태는 배지(ChatRoomInfo)에
-        맡기고 입력창은 항상 사용 가능하게 둔다. (업로드 중 비활성화는 uploading prop 이 담당)
+        최초 진입 readiness(방 정보 + 초기 setup 완료) 전에는 입력을 막는다.
+        다만 한 번 방이 준비된 뒤의 재연결 중에는 입력을 열어 둬, 느린 React 연결 상태
+        동기화 때문에 chat-send-button 이 눌리지 않던 회귀를 피한다.
       */}
       <ChatInput
         onSubmit={handleMessageSubmit}
         fileInputRef={fileInputRef}
         uploading={uploading}
+        disabled={!inputReady}
         room={room}
       />
     </VStack>

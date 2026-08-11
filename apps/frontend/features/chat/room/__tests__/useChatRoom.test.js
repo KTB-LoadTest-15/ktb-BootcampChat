@@ -128,6 +128,7 @@ describe('useChatRoom', () => {
         loading: expect.any(Boolean),
         connected: expect.any(Boolean),
         connectionStatus: expect.any(String),
+        inputReady: expect.any(Boolean),
         fileInputRef: expect.any(Object),
         handleMessageSubmit: expect.any(Function),
         handleReactionAdd: expect.any(Function),

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFileHandling } from './useFileHandling';
 import { useMessageHandling } from './useMessageHandling';
@@ -22,6 +22,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     currentUser,
     error,
     loading,
+    isInitialized,
     messageLoadError,
     hasMoreMessages,
     loadingMessages,
@@ -166,6 +167,11 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
   // File handling hook
   const { fileInputRef } = useFileHandling(currentUser, roomId);
 
+  const inputReady = useMemo(
+    () => Boolean(room && currentUser && isInitialized && !loading && !error),
+    [room, currentUser, isInitialized, loading, error]
+  );
+
   return {
     // State
     room,
@@ -181,6 +187,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     uploadError,
     hasMoreMessages,
     loadingMessages,
+    inputReady,
 
     // Refs
     fileInputRef,
