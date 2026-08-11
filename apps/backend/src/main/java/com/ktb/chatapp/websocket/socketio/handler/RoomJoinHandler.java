@@ -15,6 +15,7 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
+import com.ktb.chatapp.service.readcursor.ReadCursorStore;
 import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
@@ -47,6 +48,7 @@ public class RoomJoinHandler {
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
     private final SocketDispatcher socketDispatcher;
+    private final ReadCursorStore readCursorStore;
 
     // 방 입장 처리(DB 조회·저장·브로드캐스트)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
     @OnEvent(JOIN_ROOM)
@@ -131,6 +133,7 @@ public class RoomJoinHandler {
                 .messages(messageLoadResult.getMessages())
                 .hasMore(messageLoadResult.isHasMore())
                 .activeStreams(Collections.emptyList())
+                .readCursors(readCursorStore.findByRoom(roomId))
                 .build();
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);

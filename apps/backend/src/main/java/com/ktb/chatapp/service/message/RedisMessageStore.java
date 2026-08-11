@@ -167,32 +167,4 @@ public class RedisMessageStore implements MessageStore {
         return new MessagePage(messages, hasMore);
     }
 
-    @Override
-    public long addReaderToMessages(List<String> messageIds, String userId, LocalDateTime readAt) {
-        if (messageIds == null || messageIds.isEmpty()) {
-            return 0L;
-        }
-        List<String> jsons = hashOps.multiGet(KEY_MESSAGES, messageIds);
-        Map<String, String> updated = new HashMap<>();
-        for (String json : jsons) {
-            if (json == null) {
-                continue;
-            }
-            Message message = deserialize(json);
-            List<Message.MessageReader> readers = message.getReaders();
-            if (readers == null) {
-                readers = new ArrayList<>();
-                message.setReaders(readers);
-            }
-            boolean alreadyRead = readers.stream().anyMatch(r -> r.getUserId().equals(userId));
-            if (!alreadyRead) {
-                readers.add(Message.MessageReader.builder().userId(userId).readAt(readAt).build());
-                updated.put(message.getId(), serialize(message));
-            }
-        }
-        if (!updated.isEmpty()) {
-            hashOps.putAll(KEY_MESSAGES, updated);
-        }
-        return updated.size();
-    }
 }

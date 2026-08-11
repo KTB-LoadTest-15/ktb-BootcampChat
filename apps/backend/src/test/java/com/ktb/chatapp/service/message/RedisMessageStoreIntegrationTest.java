@@ -143,24 +143,6 @@ class RedisMessageStoreIntegrationTest {
     }
 
     @Test
-    @DisplayName("addReaderToMessages: 멱등하고 서로 다른 사용자는 누적된다")
-    void addReaderToMessages_idempotentAndDistinct() {
-        String id = messageStore.add(newMessage(LocalDateTime.now())).getId();
-
-        long first = messageStore.addReaderToMessages(List.of(id), "user-A", LocalDateTime.now());
-        long second = messageStore.addReaderToMessages(List.of(id), "user-A", LocalDateTime.now());
-        long third = messageStore.addReaderToMessages(List.of(id), "user-B", LocalDateTime.now());
-
-        assertThat(first).isEqualTo(1L);
-        assertThat(second).isZero(); // 멱등: 이미 읽음
-        assertThat(third).isEqualTo(1L);
-
-        Message found = messageStore.findById(id).orElseThrow();
-        assertThat(found.getReaders().stream().map(Message.MessageReader::getUserId).toList())
-                .containsExactlyInAnyOrder("user-A", "user-B");
-    }
-
-    @Test
     @DisplayName("findByFileId: 파일 메시지를 fileId로 조회한다")
     void findByFileId_locatesMessage() {
         Message m = newMessage(LocalDateTime.now());

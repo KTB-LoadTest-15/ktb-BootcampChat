@@ -105,17 +105,15 @@ class RedisToMongoFlusherIntegrationTest {
     }
 
     @Test
-    @DisplayName("flush: 첫 flush 전에 붙은 읽음 상태도 함께 영속화된다")
-    void flush_carriesReaderState() {
+    @DisplayName("flush: 첫 flush 전에 붙은 리액션 상태도 함께 영속화된다")
+    void flush_carriesReactionState() {
         String id = messageStore.add(newMessage("hi", LocalDateTime.now().minusMinutes(1))).getId();
-        messageStore.addReaderToMessages(List.of(id), "user-A", LocalDateTime.now());
+        messageStore.addReaction(id, "👍", "user-A");
 
         flusher.flushBatch(500);
 
         Message persisted = messageRepository.findById(id).orElseThrow();
-        assertThat(persisted.getReaders())
-                .extracting(Message.MessageReader::getUserId)
-                .containsExactly("user-A");
+        assertThat(persisted.getReactions().get("👍")).containsExactly("user-A");
     }
 
     @Test
