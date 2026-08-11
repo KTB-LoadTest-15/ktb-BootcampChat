@@ -27,8 +27,40 @@ env:
   FRONTEND_IMAGE: ghcr.io/ktb-loadtest-15/ktb-bootcampchat-frontend
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SOCKET_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
+          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          BASTION_HOST: ${{ secrets.BASTION_HOST }}
+          BASTION_USER: ${{ secrets.BASTION_USER }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping frontend CD because FRONTEND_NEXT_PUBLIC_API_URL or FRONTEND_NEXT_PUBLIC_SOCKET_URL is not set."
+            exit 0
+          fi
+
+          if [ -z "${FRONTEND_HOSTS:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ] || [ -z "${BASTION_HOST:-}" ] || [ -z "${BASTION_USER:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping frontend CD because deploy secrets are not fully configured."
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
   # 프로덕션 배포에 쓸 프론트 이미지를 빌드하고 push한다.
   build-frontend:
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,28 +73,6 @@ jobs:
       # 배포 추적과 롤백 식별을 위해 커밋 SHA 앞 12자리를 태그로 쓴다.
       - id: tag
         run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
-
-      # 빌드 인자와 SSH 배포에 필요한 필수 설정이 없으면 초기에 실패시킨다.
-      - name: Validate deploy configuration
-        env:
-          NEXT_PUBLIC_API_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
-          NEXT_PUBLIC_SOCKET_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
-          FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          BASTION_HOST: ${{ secrets.BASTION_HOST }}
-          BASTION_USER: ${{ secrets.BASTION_USER }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ]; then
-            echo "::error::Repository variables FRONTEND_NEXT_PUBLIC_API_URL and FRONTEND_NEXT_PUBLIC_SOCKET_URL must be set."
-            exit 1
-          fi
-
-          if [ -z "${FRONTEND_HOSTS:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ] || [ -z "${BASTION_HOST:-}" ] || [ -z "${BASTION_USER:-}" ]; then
-            echo "::error::Secrets FRONTEND_HOSTS, SSH_PRIVATE_KEY, BASTION_HOST, and BASTION_USER must be set."
-            exit 1
-          fi
 
       # Docker buildx를 써서 캐시 가능한 이미지 빌드를 수행한다.
       - uses: docker/setup-buildx-action@v3
@@ -91,8 +101,8 @@ jobs:
 
   # 이미지가 정상 push되면 bastion을 거쳐 각 프론트 호스트에 배포한다.
   deploy:
-    needs: build-frontend
-    if: needs.build-frontend.result == 'success'
+    needs: [preflight, build-frontend]
+    if: needs.preflight.outputs.enabled == 'true' && needs.build-frontend.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
