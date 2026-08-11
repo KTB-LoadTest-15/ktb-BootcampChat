@@ -29,7 +29,6 @@ COPY apps/frontend/contexts apps/frontend/contexts
 COPY apps/frontend/features apps/frontend/features
 COPY apps/frontend/hooks apps/frontend/hooks
 COPY apps/frontend/lib apps/frontend/lib
-COPY apps/frontend/pages apps/frontend/pages
 COPY apps/frontend/public apps/frontend/public
 COPY apps/frontend/services apps/frontend/services
 COPY apps/frontend/styles apps/frontend/styles
