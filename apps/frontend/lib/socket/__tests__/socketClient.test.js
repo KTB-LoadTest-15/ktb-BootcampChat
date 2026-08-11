@@ -107,7 +107,7 @@ describe('socketClient', () => {
     client.fetchPreviousMessages({ roomId: 'room-1', limit: 30 });
     client.joinRoom('room-1');
     client.leaveRoom('room-1');
-    client.markMessagesAsRead('room-1', 1000);
+    client.markMessagesAsRead('room-1', 'message-1');
 
     expect(service.send).toHaveBeenCalledWith('chatMessage', {
       room: 'room-1',
@@ -122,7 +122,7 @@ describe('socketClient', () => {
     expect(service.send).toHaveBeenCalledWith('leaveRoom', 'room-1');
     expect(service.send).toHaveBeenCalledWith('markMessagesAsRead', {
       roomId: 'room-1',
-      lastReadTs: 1000,
+      lastReadMessageId: 'message-1',
     });
   });
 
@@ -148,11 +148,11 @@ describe('socketClient', () => {
     };
     const client = createSocketClient(service);
 
-    client.markMessagesAsRead('room-1', 1000, socket);
+    client.markMessagesAsRead('room-1', 'message-1', socket);
 
     expect(service.sendOn).toHaveBeenCalledWith(socket, 'markMessagesAsRead', {
       roomId: 'room-1',
-      lastReadTs: 1000,
+      lastReadMessageId: 'message-1',
     });
     expect(service.send).not.toHaveBeenCalled();
   });
@@ -276,17 +276,17 @@ describe('socketClient', () => {
     vi.useRealTimers();
   });
 
-  it('rejects invalid roomId or timestamp before marking messages as read', () => {
+  it('rejects invalid roomId or messageId before marking messages as read', () => {
     const service = {
       send: vi.fn(),
     };
     const client = createSocketClient(service);
 
-    expect(() => client.markMessagesAsRead('', 1000)).toThrowError(
+    expect(() => client.markMessagesAsRead('', 'message-1')).toThrowError(
       'roomId must be a non-empty string',
     );
-    expect(() => client.markMessagesAsRead('room-1', NaN)).toThrowError(
-      'lastReadTs must be a finite number',
+    expect(() => client.markMessagesAsRead('room-1', '')).toThrowError(
+      'lastReadMessageId must be a non-empty string',
     );
     expect(service.send).not.toHaveBeenCalled();
   });

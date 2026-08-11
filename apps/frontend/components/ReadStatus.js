@@ -43,7 +43,8 @@ const ReadStatus = ({
       return;
     }
     try {
-      if (onMessageRead(messageTimestamp)) {
+      // 서버가 timestamp를 정하도록 messageId를 넘긴다. timestamp는 로컬 배칭(최댓값 선택)용.
+      if (onMessageRead(messageId, messageTimestamp)) {
         setHasMarkedAsRead(true);
       }
     } catch (error) {

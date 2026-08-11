@@ -21,15 +21,15 @@ describe('useReadReceiptBatch', () => {
     vi.useRealTimers();
   });
 
-  it('batches the max read timestamp and sends it once with roomId', () => {
+  it('sends the id of the newest read message once, with roomId', () => {
     const { result } = renderHook(() =>
       useReadReceiptBatch({ roomId: 'room-1', delayMs: 200 })
     );
 
     act(() => {
-      expect(result.current(1000)).toBe(true);
-      expect(result.current(3000)).toBe(true); // 최댓값
-      expect(result.current(2000)).toBe(true);
+      expect(result.current('message-a', 1000)).toBe(true);
+      expect(result.current('message-c', 3000)).toBe(true); // 최댓값 ts
+      expect(result.current('message-b', 2000)).toBe(true);
       vi.advanceTimersByTime(199);
     });
 
@@ -39,8 +39,9 @@ describe('useReadReceiptBatch', () => {
       vi.advanceTimersByTime(1);
     });
 
+    // ts가 아니라 최신 메시지의 id를 보낸다(서버가 서버 timestamp로 커서 전진).
     expect(socketClient.markMessagesAsRead).toHaveBeenCalledTimes(1);
-    expect(socketClient.markMessagesAsRead).toHaveBeenCalledWith('room-1', 3000);
+    expect(socketClient.markMessagesAsRead).toHaveBeenCalledWith('room-1', 'message-c');
   });
 
   it('does not queue a receipt while the socket cannot send', () => {
@@ -50,7 +51,7 @@ describe('useReadReceiptBatch', () => {
     );
 
     act(() => {
-      expect(result.current(1000)).toBe(false);
+      expect(result.current('message-a', 1000)).toBe(false);
       vi.runAllTimers();
     });
 
@@ -61,7 +62,7 @@ describe('useReadReceiptBatch', () => {
     const { result } = renderHook(() => useReadReceiptBatch({ delayMs: 200 }));
 
     act(() => {
-      expect(result.current(1000)).toBe(true);
+      expect(result.current('message-a', 1000)).toBe(true);
       vi.runAllTimers();
     });
 
@@ -74,7 +75,7 @@ describe('useReadReceiptBatch', () => {
     );
 
     act(() => {
-      result.current(1000);
+      result.current('message-a', 1000);
     });
     unmount();
 
