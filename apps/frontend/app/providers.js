@@ -1,33 +1,29 @@
 'use client';
 
 import { ThemeProvider } from '@vapor-ui/core';
-import { useRouter } from 'next/navigation';
-import ClientLogBridge from '@/components/ClientLogBridge';
-import ToastContainer from '@/components/Toast';
-import { AuthProviderWithRouter, useAuth } from '@/contexts/AuthContext';
-import { SocketProvider } from '@/lib/socket/SocketProvider';
+import dynamic from 'next/dynamic';
+import { usePathname, useRouter } from 'next/navigation';
+import { AuthProviderWithRouter } from '@/contexts/AuthContext';
 
-const AuthenticatedSocketProvider = ({ children }) => {
-  const { user } = useAuth();
+const AppAuthenticatedShell = dynamic(
+  () => import('@/components/AppAuthenticatedShell')
+);
 
-  return (
-    <SocketProvider session={user}>
-      {children}
-    </SocketProvider>
-  );
-};
+const PUBLIC_AUTH_PATHS = new Set(['/', '/register']);
 
 export default function AppProviders({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isPublicAuthPage = PUBLIC_AUTH_PATHS.has(pathname);
 
   return (
     <ThemeProvider defaultTheme="dark">
       <AuthProviderWithRouter router={router}>
-        <AuthenticatedSocketProvider>
-          <ClientLogBridge />
-          {children}
-          <ToastContainer />
-        </AuthenticatedSocketProvider>
+        {isPublicAuthPage ? (
+          <>{children}</>
+        ) : (
+          <AppAuthenticatedShell>{children}</AppAuthenticatedShell>
+        )}
       </AuthProviderWithRouter>
     </ThemeProvider>
   );
