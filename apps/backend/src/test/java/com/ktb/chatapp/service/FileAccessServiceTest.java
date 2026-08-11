@@ -8,7 +8,7 @@ import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.storage.StoragePort;
 import com.ktb.chatapp.storage.StoredObject;
@@ -52,7 +52,7 @@ class FileAccessServiceTest {
     private FileRepository fileRepository;
 
     @Mock
-    private MessageRepository messageRepository;
+    private MessageStore messageStore;
 
     @Mock
     private RoomRepository roomRepository;
@@ -188,7 +188,7 @@ class FileAccessServiceTest {
     void forDownload_missingFileEntity_throwsNotFound() {
         when(fileRepository.findByFilename(FILE_NAME)).thenReturn(Optional.empty());
         FileAccessService service = new FileAccessService(
-                new DirectStorage(), fileRepository, messageRepository, roomRepository);
+                new DirectStorage(), fileRepository, messageStore, roomRepository);
 
         assertThatThrownBy(() -> service.forDownload(FILE_NAME, PARTICIPANT))
                 .hasMessage("파일을 찾을 수 없습니다: " + FILE_NAME);
@@ -207,11 +207,11 @@ class FileAccessServiceTest {
 
     private FileAccessService serviceWith(StoragePort storagePort, String mimetype) {
         when(fileRepository.findByFilename(FILE_NAME)).thenReturn(Optional.of(fileEntity(mimetype)));
-        when(messageRepository.findByFileId(FILE_ID)).thenReturn(Optional.of(
+        when(messageStore.findByFileId(FILE_ID)).thenReturn(Optional.of(
                 Message.builder().id("message-id").roomId(ROOM_ID).fileId(FILE_ID).build()));
         when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(
                 Room.builder().id(ROOM_ID).participantIds(Set.of(PARTICIPANT)).build()));
-        return new FileAccessService(storagePort, fileRepository, messageRepository, roomRepository);
+        return new FileAccessService(storagePort, fileRepository, messageStore, roomRepository);
     }
 
     private File fileEntity(String mimetype) {

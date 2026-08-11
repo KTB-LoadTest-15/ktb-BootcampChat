@@ -9,13 +9,15 @@ import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.UserBatchLoader;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,9 +41,10 @@ import static org.mockito.Mockito.when;
 class RoomLeaveHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
+    @Mock private UserBatchLoader userBatchLoader;
     @Mock private UserRooms userRooms;
     @Mock private MessageResponseMapper messageResponseMapper;
     @Mock private SocketIOClient client;
@@ -53,11 +56,13 @@ class RoomLeaveHandlerTest {
     void setUp() {
         handler = new RoomLeaveHandler(
                 socketIOServer,
-                messageRepository,
+                messageStore,
                 roomRepository,
                 userRepository,
+                userBatchLoader,
                 userRooms,
-                messageResponseMapper);
+                messageResponseMapper,
+                (key, task, onReject) -> task.run());
     }
 
     @Test
@@ -96,10 +101,10 @@ class RoomLeaveHandlerTest {
         when(client.get("user")).thenReturn(socketUser);
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(true);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-        when(userRepository.findById("user-2")).thenReturn(Optional.of(remainingUser));
+        when(userBatchLoader.findByIds(any())).thenReturn(Map.of("user-2", remainingUser));
         when(roomRepository.findById("room-1"))
                 .thenReturn(Optional.of(roomBeforeLeave), Optional.of(roomAfterLeave));
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageStore.add(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.now());

@@ -10,7 +10,7 @@ import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.RateLimitCheckResult;
@@ -44,7 +44,7 @@ import static org.mockito.Mockito.*;
 class ChatMessageHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private FileRepository fileRepository;
@@ -59,10 +59,14 @@ class ChatMessageHandlerTest {
 
     @BeforeEach
     void setUp() {
+        // 동기 디스패처: 오프로드 대신 즉시 실행해 기존 동기 검증을 유지한다.
+        // (오프로드/순서/거부는 KeyedSocketDispatcherTest에서 검증)
+        com.ktb.chatapp.websocket.socketio.SocketDispatcher syncDispatcher =
+                (key, task, onReject) -> task.run();
         handler =
                 new ChatMessageHandler(
                         socketIOServer,
-                        messageRepository,
+                        messageStore,
                         roomRepository,
                         userRepository,
                         fileRepository,
@@ -71,7 +75,8 @@ class ChatMessageHandlerTest {
                         roomActivityNotifier,
                         bannedWordChecker,
                         rateLimitService,
-                        meterRegistry);
+                        meterRegistry,
+                        syncDispatcher);
     }
 
     @Test
@@ -112,7 +117,7 @@ class ChatMessageHandlerTest {
         verify(client).sendEvent(eq(ERROR), payloadCaptor.capture());
         Map<String, String> payload = payloadCaptor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("MESSAGE_REJECTED", payload.get("code"));
-        verifyNoInteractions(messageRepository);
+        verifyNoInteractions(messageStore);
         verify(socketIOServer, never()).getRoomOperations(any());
     }
 
@@ -139,7 +144,7 @@ class ChatMessageHandlerTest {
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
+        when(messageStore.add(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
             message.setTimestamp(LocalDateTime.of(2026, 7, 7, 9, 0));
@@ -162,5 +167,29 @@ class ChatMessageHandlerTest {
         verify(roomActivityNotifier).notifyMessageStored("room-1");
         org.junit.jupiter.api.Assertions.assertEquals("message-1", payloadCaptor.getValue().getId());
         org.junit.jupiter.api.Assertions.assertEquals("hello", payloadCaptor.getValue().getContent());
+    }
+
+    @Test
+    void handleChatMessage_offloadsToDispatcherKeyedByRoom() {
+        java.util.concurrent.atomic.AtomicReference<String> capturedKey =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        // 디스패처가 task를 실행하지 않고 key만 캡처 → event-loop에서 즉시 반환(오프로드)됨을 증명
+        com.ktb.chatapp.websocket.socketio.SocketDispatcher capturing =
+                (key, task, onReject) -> capturedKey.set(key);
+        ChatMessageHandler offloadingHandler =
+                new ChatMessageHandler(
+                        socketIOServer, messageStore, roomRepository, userRepository,
+                        fileRepository, aiService, sessionService, roomActivityNotifier,
+                        bannedWordChecker, rateLimitService, meterRegistry, capturing);
+
+        SocketIOClient client = mock(SocketIOClient.class);
+        ChatMessageRequest request =
+                ChatMessageRequest.builder().room("room-42").type("text").content("hi").build();
+
+        offloadingHandler.handleChatMessage(client, request);
+
+        // 방(roomId)이 순서 보장 key로 전달되고, 처리 본문은 아직 실행되지 않았다(오프로드)
+        org.junit.jupiter.api.Assertions.assertEquals("room-42", capturedKey.get());
+        verifyNoInteractions(sessionService, messageStore, rateLimitService);
     }
 }

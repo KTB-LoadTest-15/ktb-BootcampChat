@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.convert.DurationStyle;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,15 @@ public class SessionService {
     private final SessionStore sessionStore;
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
     private static final long SESSION_TIMEOUT = SESSION_TTL_SEC * 1000;
+
+    /**
+     * 세션 활동 시각(lastActivity/expiresAt) 갱신 write를 최소 이 간격(ms)마다 한 번만 수행한다(throttle).
+     * 0이면 throttle 없음(매 검증마다 write, 기존 동작). 메시지 hot path에서 validateSession이
+     * 매 메시지마다 세션을 저장하던 것을, 최근 갱신이 이 창 이내면 생략해 event-loop/DB write를 줄인다.
+     * TTL(30m)에 비해 창이 훨씬 작아 만료 정밀도에는 영향이 없다.
+     */
+    @Value("${session.touch.throttle-ms:60000}")
+    private long sessionTouchThrottleMs;
 
     private String generateSessionId() {
         return UUID.randomUUID().toString().replace("-", "");
@@ -94,10 +104,14 @@ public class SessionService {
                 return SessionValidationResult.invalid("SESSION_EXPIRED", "세션이 만료되었습니다.");
             }
 
-            // Update last activity
-            session.setLastActivity(now);
-            session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
-            session = sessionStore.save(session);
+            // 세션 활동 시각 갱신 write를 throttle: 최근 sessionTouchThrottleMs 이내에 이미 갱신했으면 생략.
+            // hot path(메시지당 validateSession)에서 매번 세션을 저장하던 것을 창 단위 1회로 줄인다.
+            // expiresAt은 TTL(30m) 대비 창(기본 60s)이 훨씬 작아, 스킵해도 만료 정밀도에 영향이 없다.
+            if (now - session.getLastActivity() >= sessionTouchThrottleMs) {
+                session.setLastActivity(now);
+                session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
+                session = sessionStore.save(session);
+            }
 
             SessionData sessionData = toSessionData(session);
             return SessionValidationResult.valid(sessionData);

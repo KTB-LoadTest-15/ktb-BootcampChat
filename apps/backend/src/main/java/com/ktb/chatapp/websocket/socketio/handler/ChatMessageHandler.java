@@ -10,9 +10,9 @@ import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.*;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
 import com.ktb.chatapp.service.RoomActivityNotifier;
@@ -20,6 +20,7 @@ import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
 import com.ktb.chatapp.service.RateLimitService;
 import com.ktb.chatapp.service.RateLimitCheckResult;
+import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -40,7 +41,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class ChatMessageHandler {
     private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
@@ -50,9 +51,33 @@ public class ChatMessageHandler {
     private final BannedWordChecker bannedWordChecker;
     private final RateLimitService rateLimitService;
     private final MeterRegistry meterRegistry;
-    
+    private final SocketDispatcher socketDispatcher;
+
+    /**
+     * netty-socketio는 이 핸들러를 event-loop 스레드에서 호출한다. 블로킹 처리(DB I/O 등)를 그대로
+     * 실행하면 event-loop이 점유되므로, 방(roomId) 단위로 순서를 지키며 전용 워커로 오프로드한다.
+     * data가 없으면 세션 id를 key로 써서 같은 연결의 처리 순서를 유지한다.
+     */
     @OnEvent(CHAT_MESSAGE)
     public void handleChatMessage(SocketIOClient client, ChatMessageRequest data) {
+        String orderingKey = (data != null && data.getRoom() != null)
+                ? data.getRoom()
+                : client.getSessionId().toString();
+        socketDispatcher.dispatch(
+                orderingKey,
+                () -> processChatMessage(client, data),
+                () -> onDispatchRejected(client));
+    }
+
+    private void onDispatchRejected(SocketIOClient client) {
+        recordError("dispatch_rejected");
+        client.sendEvent(ERROR, Map.of(
+                "code", "SERVER_BUSY",
+                "message", "서버가 혼잡합니다. 잠시 후 다시 시도해주세요."
+        ));
+    }
+
+    void processChatMessage(SocketIOClient client, ChatMessageRequest data) {
         Timer.Sample timerSample = Timer.start(meterRegistry);
 
         if (data == null) {
@@ -161,7 +186,7 @@ public class ChatMessageHandler {
                 return;
             }
 
-            Message savedMessage = messageRepository.save(message);
+            Message savedMessage = messageStore.add(message);
             MessageResponse messageResponse = createMessageResponse(savedMessage, sender);
 
             socketIOServer.getRoomOperations(roomId)
@@ -173,7 +198,8 @@ public class ChatMessageHandler {
             // AI 멘션 처리
             aiService.handleAIMentions(roomId, socketUser.id(), messageContent);
 
-            sessionService.updateLastActivity(socketUser.id());
+            // 세션 lastActivity/expiresAt는 위 validateSession()에서 이미 갱신·저장했으므로
+            // 여기서 updateLastActivity()를 다시 호출하지 않는다(메시지당 세션 write 중복 제거).
 
             // Record success metrics
             recordMessageSuccess(messageType);

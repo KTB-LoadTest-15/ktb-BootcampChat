@@ -4,8 +4,8 @@ import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.storage.StoragePort;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -33,7 +33,7 @@ public class FileAccessService {
 
     private final StoragePort storagePort;
     private final FileRepository fileRepository;
-    private final MessageRepository messageRepository;
+    private final MessageStore messageStore;
     private final RoomRepository roomRepository;
 
     public FileAccess forDownload(String fileName, String requesterId) {
@@ -69,7 +69,7 @@ public class FileAccessService {
                 .orElseThrow(() -> new RuntimeException("파일을 찾을 수 없습니다: " + fileName));
 
         // 2. 메시지 조회 (파일과 메시지 연결 확인) - 효율적인 쿼리 메서드 사용
-        Message message = messageRepository.findByFileId(fileEntity.getId())
+        Message message = messageStore.findByFileId(fileEntity.getId())
                 .orElseThrow(() -> new RuntimeException("파일과 연결된 메시지를 찾을 수 없습니다"));
 
         // 3. 방 조회 (사용자가 방 참가자인지 확인)
