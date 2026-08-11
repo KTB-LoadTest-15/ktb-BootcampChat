@@ -62,21 +62,54 @@ public class SocketIOConfig {
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
+    @Value("${app.redis.sentinel.nodes:}")
+    private String sentinelNodes;
+
+    @Value("${app.redis.sentinel.master:mymaster}")
+    private String sentinelMaster;
+
+    @Value("${app.redis.sentinel.password:}")
+    private String sentinelPassword;
+
     /**
      * socketio.store=redisson일 때만 생성되는, Socket.IO 전용 RedissonClient.
-     * 애플리케이션의 spring.data.redis.* 설정과 같은 Redis 인스턴스를 가리킨다.
-     * netty-socketio의 RedissonStoreFactory가 이 클라이언트로 클러스터 전역 pub/sub을 수행한다.
+     * netty-socketio의 RedissonStoreFactory가 이 클라이언트로 클러스터 전역 pub/sub 및
+     * ConnectedUsers/UserRooms 멤버십 공유를 수행한다.
+     *
+     * <p>Sentinel(app.redis.sentinel.nodes) 설정 시 sentinel 모드로 붙고, 아니면 단일 노드로 fallback.
+     * 멤버십/브로드캐스트는 크로스노드 read-after-write 정합성이 필요하므로 {@link org.redisson.config.ReadMode#MASTER}
+     * 로 고정한다(replica 지연으로 방금 입장한 유저가 다른 노드에서 안 보이는 사고 방지).
      */
     @Bean(destroyMethod = "shutdown")
     @ConditionalOnProperty(name = "socketio.store", havingValue = "redisson")
     public RedissonClient socketIoRedissonClient() {
         Config config = new Config();
-        var single = config.useSingleServer()
-                .setAddress("redis://" + redisHost + ":" + redisPort);
-        if (StringUtils.hasText(redisPassword)) {
-            single.setPassword(redisPassword);
+        if (StringUtils.hasText(sentinelNodes)) {
+            var sentinel = config.useSentinelServers()
+                    .setMasterName(sentinelMaster)
+                    .setReadMode(org.redisson.config.ReadMode.MASTER);
+            for (String node : sentinelNodes.split(",")) {
+                String trimmed = node.trim();
+                if (!trimmed.isEmpty()) {
+                    sentinel.addSentinelAddress("redis://" + trimmed);
+                }
+            }
+            if (StringUtils.hasText(redisPassword)) {
+                sentinel.setPassword(redisPassword);
+            }
+            if (StringUtils.hasText(sentinelPassword)) {
+                sentinel.setSentinelPassword(sentinelPassword);
+            }
+            log.info("Socket.IO RedissonStoreFactory enabled (sentinel master={} nodes=[{}], readMode=MASTER) — cluster-wide broadcast",
+                     sentinelMaster, sentinelNodes);
+        } else {
+            var single = config.useSingleServer()
+                    .setAddress("redis://" + redisHost + ":" + redisPort);
+            if (StringUtils.hasText(redisPassword)) {
+                single.setPassword(redisPassword);
+            }
+            log.info("Socket.IO RedissonStoreFactory enabled (redis://{}:{}) — cluster-wide broadcast", redisHost, redisPort);
         }
-        log.info("Socket.IO RedissonStoreFactory enabled (redis://{}:{}) — cluster-wide broadcast", redisHost, redisPort);
         return Redisson.create(config);
     }
 
