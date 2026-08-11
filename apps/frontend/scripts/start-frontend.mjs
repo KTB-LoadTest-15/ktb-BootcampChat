@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const appRoot = path.resolve(__dirname, '..', '..');
+const appRoot = path.resolve(__dirname, '..');
 const manifestPath = path.join(appRoot, 'apps', 'frontend', '.build-public-env.json');
 
 try {
