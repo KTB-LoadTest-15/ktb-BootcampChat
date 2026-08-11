@@ -8,11 +8,16 @@ import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -34,25 +39,37 @@ public class ConnectionLoginHandler {
     private final SocketIOServer socketIOServer;
     private final ConnectedUsers connectedUsers;
     private final UserRooms userRooms;
-    private final RoomJoinHandler roomJoinHandler;
     private final RoomLeaveHandler roomLeaveHandler;
     /** 중복 로그인 유예 종료를 예약하는 공유 스케줄러(접속마다 스레드를 새로 만들지 않는다). */
     private final ScheduledExecutorService duplicateLoginScheduler;
+    /** 연결 끊김 후 방 퇴장을 유예 실행하는 스케줄러. */
+    private final ScheduledExecutorService disconnectGraceScheduler;
+
+    /**
+     * 연결 끊김 후 방 퇴장까지 유예(ms). 이 안에 재연결(새로고침)하면 퇴장을 취소해 입퇴장 알림/DB
+     * churn을 없앤다. 0이면 유예 없이 끊기는 즉시 퇴장(기존 동작).
+     */
+    private final long disconnectGraceMs;
+
+    /** userId → 대기 중인 퇴장 작업. 재연결 시 취소한다. */
+    private final Map<String, ScheduledFuture<?>> pendingLeaves = new ConcurrentHashMap<>();
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
             ConnectedUsers connectedUsers,
             UserRooms userRooms,
-            RoomJoinHandler roomJoinHandler,
             RoomLeaveHandler roomLeaveHandler,
             ScheduledExecutorService duplicateLoginScheduler,
+            ScheduledExecutorService disconnectGraceScheduler,
+            @Value("${socketio.disconnect.grace-ms:10000}") long disconnectGraceMs,
             MeterRegistry meterRegistry) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
         this.userRooms = userRooms;
-        this.roomJoinHandler = roomJoinHandler;
         this.roomLeaveHandler = roomLeaveHandler;
         this.duplicateLoginScheduler = duplicateLoginScheduler;
+        this.disconnectGraceScheduler = disconnectGraceScheduler;
+        this.disconnectGraceMs = disconnectGraceMs;
 
         // Register gauge metric for concurrent users
         Gauge.builder("socketio.concurrent.users", connectedUsers::size)
@@ -67,15 +84,17 @@ public class ConnectionLoginHandler {
         String userId = user.id();
         
         try {
+            // 유예 중이던 퇴장을 취소한다(새로고침/재연결이므로 나간 게 아니다).
+            cancelPendingLeave(userId);
+
             // 다른 노드에 접속된 사용자는 통보 불가
             notifyDuplicateLogin(client, userId);
             client.set("user", user);
-            
-            userRooms.get(userId).forEach(roomId -> {
-                // 재접속 시 기존 참여 방 재입장 처리
-                roomJoinHandler.handleJoinRoom(client, roomId);
-            });
-            
+
+            // 재접속: 멤버인 방들에 소켓만 재구독(딜리버리용). 히스토리/브로드캐스트 없음 —
+            // 현재 보고 있는 방의 히스토리는 프론트가 보내는 joinRoom(조용한 재조인 경로)이 서빙한다.
+            userRooms.get(userId).forEach(client::joinRoom);
+
             connectedUsers.set(userId, user);
 
             log.info("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
@@ -102,10 +121,11 @@ public class ConnectionLoginHandler {
             if (userId == null) {
                 return;
             }
-            
-            userRooms.get(userId).forEach(roomId -> {
-                roomLeaveHandler.handleLeaveRoom(client, roomId);
-            });
+
+            // 방 퇴장은 즉시 처리하지 않고 유예 후 실행한다. grace 안에 재연결(새로고침)하면 취소돼
+            // 입퇴장 알림·참가자 DB churn·N 팬아웃이 발생하지 않는다. grace<=0이면 즉시 퇴장(기존 동작).
+            scheduleLeaveAfterGrace(userId, userName, new HashSet<>(userRooms.get(userId)));
+
             String socketId = client.getSessionId().toString();
             
             // 해당 사용자의 현재 활성 연결인 경우에만 정리
@@ -131,6 +151,40 @@ public class ConnectionLoginHandler {
         
     }
     
+    /**
+     * 방 퇴장을 유예 후 실행하도록 예약한다. grace{@code <=0}이면 즉시 퇴장(기존 동작).
+     * 같은 유저의 이전 대기 퇴장은 취소하고 새로 예약한다.
+     */
+    private void scheduleLeaveAfterGrace(String userId, String userName, Set<String> rooms) {
+        if (rooms.isEmpty()) {
+            return;
+        }
+        if (disconnectGraceMs <= 0) {
+            rooms.forEach(roomId -> roomLeaveHandler.leaveRoomByUser(userId, userName, roomId));
+            return;
+        }
+        cancelPendingLeave(userId);
+        AtomicReference<ScheduledFuture<?>> holder = new AtomicReference<>();
+        ScheduledFuture<?> future = disconnectGraceScheduler.schedule(() -> {
+            pendingLeaves.remove(userId, holder.get());
+            try {
+                rooms.forEach(roomId -> roomLeaveHandler.leaveRoomByUser(userId, userName, roomId));
+            } catch (Exception e) {
+                log.error("Error during graceful leave for user {}", userId, e);
+            }
+        }, disconnectGraceMs, TimeUnit.MILLISECONDS);
+        holder.set(future);
+        pendingLeaves.put(userId, future);
+    }
+
+    /** 대기 중인 퇴장 작업이 있으면 취소한다(재연결 시). */
+    private void cancelPendingLeave(String userId) {
+        ScheduledFuture<?> prev = pendingLeaves.remove(userId);
+        if (prev != null) {
+            prev.cancel(false);
+        }
+    }
+
     private SocketUser getUserDto(SocketIOClient client) {
         return client.get("user");
     }

@@ -80,11 +80,15 @@ public class RoomJoinHandler {
                 return;
             }
             
-            // 이미 해당 방에 참여 중인지 확인
+            // 이미 해당 방의 멤버 → 새로고침/재연결에 의한 재조인.
+            // 본인에게는 히스토리(메시지·참가자·읽음커서)를 그대로 돌려주되, 방 전체에는 입장 알림도
+            // 참가자 목록 갱신도 브로드캐스트하지 않는다(입퇴장 스팸·N 팬아웃·참가자 DB churn 제거).
             if (userRooms.isInRoom(userId, roomId)) {
-                log.debug("User {} already in room {}", userId, roomId);
+                log.debug("User {} re-joining room {} (already a member) — silent", userId, roomId);
                 client.joinRoom(roomId);
-                client.sendEvent(JOIN_ROOM_SUCCESS, Map.of("roomId", roomId));
+                buildJoinSuccessResponse(roomId, userId).ifPresentOrElse(
+                        resp -> client.sendEvent(JOIN_ROOM_SUCCESS, resp),
+                        () -> client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다.")));
                 return;
             }
 
@@ -106,34 +110,13 @@ public class RoomJoinHandler {
 
             joinMessage = messageStore.add(joinMessage);
 
-            // 초기 메시지 로드
-            FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
-            FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
-
-            // 업데이트된 room 다시 조회하여 최신 participantIds 가져오기
-            Optional<Room> roomOpt = roomRepository.findById(roomId);
-            if (roomOpt.isEmpty()) {
+            // 응답(히스토리·참가자·읽음커서) 구성 — addParticipant 반영된 최신 상태로.
+            Optional<JoinRoomSuccessResponse> responseOpt = buildJoinSuccessResponse(roomId, userId);
+            if (responseOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
-
-            // 참가자 정보 조회 — id 목록을 한 번의 조회로 일괄 해소(참가자당 findById N+1 제거).
-            var participantIds = roomOpt.get().getParticipantIds();
-            Map<String, User> participantsById = userBatchLoader.findByIds(participantIds);
-            List<UserResponse> participants = participantIds.stream()
-                    .map(participantsById::get)
-                    .filter(Objects::nonNull)
-                    .map(UserResponse::from)
-                    .toList();
-            
-            JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
-                .roomId(roomId)
-                .participants(participants)
-                .messages(messageLoadResult.getMessages())
-                .hasMore(messageLoadResult.isHasMore())
-                .activeStreams(Collections.emptyList())
-                .readCursors(readCursorStore.findByRoom(roomId))
-                .build();
+            JoinRoomSuccessResponse response = responseOpt.get();
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
 
@@ -143,10 +126,10 @@ public class RoomJoinHandler {
 
             // 참가자 목록 업데이트 브로드캐스트
             socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participants);
+                .sendEvent(PARTICIPANTS_UPDATE, response.getParticipants());
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
-                userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());
+                userName, roomId, response.getMessages().size(), response.isHasMore());
 
         } catch (Exception e) {
             log.error("Error handling joinRoom", e);
@@ -156,6 +139,38 @@ public class RoomJoinHandler {
         }
     }
     
+    /**
+     * 입장 응답(초기 메시지 30건 + 참가자 목록 + 읽음커서)을 구성한다. 최초 입장과 조용한 재조인이
+     * 공유한다. 방이 없으면 empty. 브로드캐스트/DB 쓰기 없이 조회만 한다(호출부가 본인에게만 전송).
+     */
+    private Optional<JoinRoomSuccessResponse> buildJoinSuccessResponse(String roomId, String userId) {
+        Optional<Room> roomOpt = roomRepository.findById(roomId);
+        if (roomOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
+        FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
+
+        // 참가자 정보 조회 — id 목록을 한 번의 조회로 일괄 해소(참가자당 findById N+1 제거).
+        var participantIds = roomOpt.get().getParticipantIds();
+        Map<String, User> participantsById = userBatchLoader.findByIds(participantIds);
+        List<UserResponse> participants = participantIds.stream()
+                .map(participantsById::get)
+                .filter(Objects::nonNull)
+                .map(UserResponse::from)
+                .toList();
+
+        return Optional.of(JoinRoomSuccessResponse.builder()
+                .roomId(roomId)
+                .participants(participants)
+                .messages(messageLoadResult.getMessages())
+                .hasMore(messageLoadResult.isHasMore())
+                .activeStreams(Collections.emptyList())
+                .readCursors(readCursorStore.findByRoom(roomId))
+                .build());
+    }
+
     // 순서 보장 key: 방이 있으면 roomId(방 단위 FIFO), 없으면 연결 세션 id.
     private static String orderingKey(String roomId, SocketIOClient client) {
         if (roomId != null) {

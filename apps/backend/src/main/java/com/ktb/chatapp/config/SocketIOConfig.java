@@ -175,6 +175,22 @@ public class SocketIOConfig {
     }
 
     /**
+     * 연결 끊김 시 방 퇴장을 유예(grace) 후 실행하기 위한 단일 데몬 스케줄러.
+     *
+     * <p>새로고침/일시적 네트워크 끊김을 진짜 퇴장으로 처리하지 않도록, disconnect 시 퇴장을 곧바로
+     * 브로드캐스트하지 않고 이 스케줄러로 지연 예약한다. 유예 안에 같은 유저가 재연결하면 취소된다.
+     */
+    @Bean(destroyMethod = "shutdownNow")
+    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
+    public java.util.concurrent.ScheduledExecutorService disconnectGraceScheduler() {
+        return java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "disconnect-grace");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
      * 읽음 커서 브로드캐스트 coalescing 창을 만료시키는 단일 데몬 스케줄러.
      *
      * <p>방마다 창당 flush 1건을 예약하는 가벼운 작업이라 단일 데몬 스레드로 충분하다.
