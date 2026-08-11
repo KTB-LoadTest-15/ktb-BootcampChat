@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import CustomAvatar from '@/components/CustomAvatar';
 import { Toast } from '@/components/Toast';
 import api from '@/lib/api/client';
+import axios from 'axios';
 import { saveStoredUser } from '@/lib/auth/authStorage';
 
 const ProfileImageUpload = ({ currentImage, onImageChange }) => {
@@ -55,23 +56,43 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
         throw new Error('인증 정보가 없습니다.');
       }
 
-      // FormData 생성
-      const formData = new FormData();
-      formData.append('profileImage', file);
-
-      // 파일 업로드 요청
-      const response = await api.post(
-        '/api/users/profile-image',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
+      let response;
+      if (process.env.NEXT_PUBLIC_FILE_UPLOAD_MODE === 'presigned') {
+        const presignResponse = await api.post(
+          '/api/profile-images/presign',
+          {
+            originalname: file.name,
+            mimetype: file.type,
+            size: file.size,
           },
-          // File uploads are not idempotent; a delayed response must not create
-          // duplicate S3 objects or multiply load during a spike.
-          maxRetries: 0,
+          { maxRetries: 0, timeout: 10000 }
+        );
+        const { uploadUrl, objectKey } = presignResponse.data || {};
+        if (!uploadUrl || !objectKey) {
+          throw new Error('S3 프로필 업로드 URL 응답이 올바르지 않습니다.');
         }
-      );
+
+        await axios.put(uploadUrl, file, {
+          headers: { 'Content-Type': file.type },
+          timeout: 30000,
+        });
+        response = await api.post(
+          '/api/users/profile-image',
+          { objectKey },
+          { maxRetries: 0, timeout: 10000 }
+        );
+      } else {
+        const formData = new FormData();
+        formData.append('profileImage', file);
+        response = await api.post(
+          '/api/users/profile-image',
+          formData,
+          {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            maxRetries: 0,
+          }
+        );
+      }
 
       const data = response.data;
 
