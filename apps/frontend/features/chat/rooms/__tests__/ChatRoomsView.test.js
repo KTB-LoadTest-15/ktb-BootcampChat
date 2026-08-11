@@ -1,15 +1,18 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ChatRoomsView from '../ChatRoomsView';
+import ChatRoomsView, {
+  ROOM_LIST_REFRESH_INTERVAL,
+  ROOM_LIST_STALE_AFTER_MS,
+} from '../ChatRoomsView';
 import { CONNECTION_STATUS } from '../useServerConnection';
+import { useRoomsSocket } from '../useRoomsSocket';
 
 const mocks = vi.hoisted(() => ({
   connectionStatus: 'checking',
   error: null,
   fetchRooms: vi.fn(() => Promise.resolve()),
   refreshRooms: vi.fn(() => Promise.resolve(true)),
-  attemptConnection: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -29,12 +32,6 @@ vi.mock('../useServerConnection', async () => {
     useServerConnection: () => ({
       connectionStatus: mocks.connectionStatus,
       setConnectionStatus: vi.fn(),
-      retryCount: 0,
-      setRetryCount: vi.fn(),
-      isRetrying: false,
-      setIsRetrying: vi.fn(),
-      getRetryDelay: vi.fn(() => 1000),
-      attemptConnection: mocks.attemptConnection,
     }),
   };
 });
@@ -59,15 +56,17 @@ vi.mock('../useRoomsSocket', () => ({
 
 describe('ChatRoomsView', () => {
   beforeEach(() => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     mocks.connectionStatus = CONNECTION_STATUS.CHECKING;
     mocks.error = null;
     mocks.fetchRooms.mockClear();
-    mocks.refreshRooms.mockClear();
-    mocks.attemptConnection.mockClear();
+    mocks.refreshRooms.mockReset().mockResolvedValue(true);
+    useRoomsSocket.mockClear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('does not refetch rooms when connection status changes after the initial load starts', async () => {
@@ -91,9 +90,13 @@ describe('ChatRoomsView', () => {
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(ROOM_LIST_REFRESH_INTERVAL);
 
-    expect(mocks.refreshRooms).toHaveBeenCalledWith({ silent: true });
+    expect(mocks.refreshRooms).toHaveBeenCalledWith({
+      silent: true,
+      staleAfterMs: ROOM_LIST_STALE_AFTER_MS,
+      maxRetries: 0,
+    });
   });
 
   it('does not auto refresh while the server connection is not established', async () => {
@@ -118,7 +121,48 @@ describe('ChatRoomsView', () => {
 
     document.dispatchEvent(new Event('visibilitychange'));
 
-    expect(mocks.refreshRooms).toHaveBeenCalledWith({ silent: true });
+    expect(mocks.refreshRooms).toHaveBeenCalledWith({
+      silent: true,
+      staleAfterMs: ROOM_LIST_STALE_AFTER_MS,
+      maxRetries: 0,
+    });
+  });
+
+  it('backs off the next poll after a failed background refresh', async () => {
+    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.refreshRooms
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    vi.useFakeTimers();
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    await vi.advanceTimersByTimeAsync(ROOM_LIST_REFRESH_INTERVAL);
+    expect(mocks.refreshRooms).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ROOM_LIST_REFRESH_INTERVAL * 2 - 1);
+    expect(mocks.refreshRooms).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.refreshRooms).toHaveBeenCalledTimes(2);
+  });
+
+  it('forces one room list sync when the socket reconnects', async () => {
+    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    const { onReconnect } = useRoomsSocket.mock.calls.at(-1)[0];
+
+    await act(async () => {
+      await onReconnect();
+    });
+
+    expect(mocks.refreshRooms).toHaveBeenCalledTimes(1);
+    expect(mocks.refreshRooms).toHaveBeenCalledWith({
+      silent: true,
+      maxRetries: 0,
+    });
   });
 
   it('refreshes the list when the refresh button is clicked', async () => {
