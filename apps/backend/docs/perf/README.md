@@ -33,6 +33,12 @@ mvn -Dtest='ReadStatusQueryCountIntegrationTest' test
 | P0-4/P1-4 | 발신자·참가자 30명 유저 조회 | 30 (find30) | 1 (find, $in) | −96.7%, O(N)→O(1) | [P0-4-P1-4-user-bulk-load.md](P0-4-P1-4-user-bulk-load.md) |
 | P1-3 | 리액션 추가 (Mongo) | 2 (find+update) | 1 (findAndModify) | −50% + 동시성 lost update 제거 | [P1-3-reaction-atomic.md](P1-3-reaction-atomic.md) |
 | P1-5 | 메시지당 방활성도 브로드캐스트 | 동기(event-loop 점유) | @Async 오프로드 | event-loop 점유 제거(정성적) | [P1-5-async-room-activity-broadcast.md](P1-5-async-room-activity-broadcast.md) |
+| P1-1 | 메시지당 레이트리밋 (Mongo) | 2 (find+save) | 1 (findAndModify) | −50% + 동시성 over-admission 제거 | [P1-1-rate-limit-atomic.md](P1-1-rate-limit-atomic.md) |
+| P0-2 | 세션 활동시각 write (5건 연속) | 10 (find5+update5) | 5 (find5+update0) | update N→창당 1회, event-loop write 제거 | [P0-2-session-write-throttle.md](P0-2-session-write-throttle.md) |
+| P1-7 | 중복 로그인 유예 종료 | 접속마다 raw Thread(10s) | 공유 스케줄러 예약 | 스레드 수 접속비례→상수(정성적) | [P1-7-duplicate-login-scheduler.md](P1-7-duplicate-login-scheduler.md) |
+| D5 | chatMessage 처리 위치 | event-loop 스레드(동기 블로킹) | 키드 워커 오프로드(방 FIFO) | event-loop 점유 제거·순서보장·포화 백프레셔 | [D5-eventloop-offload-chatmessage.md](D5-eventloop-offload-chatmessage.md) |
+| D5 | 소켓 TCP_NODELAY | Nagle on (tcpNoDelay=false) | Nagle off (true) | 소형 빈번 프레임 전송 지연 제거 | [socket-tcp-nodelay.md](socket-tcp-nodelay.md) |
+| D5 | **실부하 A/B (1000 동접)** | 평균연결 16,812ms·auth실패 173·828접속 | 평균연결 129ms·auth실패 0·전원접속·throughput +39% | 오프로드 종단 검증(연결 붕괴 구제) | [D5-eventloop-offload-loadtest.md](D5-eventloop-offload-loadtest.md) |
 
 ## Baseline (전환 전 기준선)
 

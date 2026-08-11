@@ -87,4 +87,84 @@ describe('useReactionHandling', () => {
     expect(socketClient.sendMessageReaction).not.toHaveBeenCalled();
     expect(Toast.error).toHaveBeenCalledWith('리액션 제거에 실패했습니다.');
   });
+
+  it('keeps reaction callbacks stable when messages change', () => {
+    const setMessages = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ user, currentMessages }) =>
+        useReactionHandling({
+          currentUser: user,
+          messages: currentMessages,
+          setMessages,
+        }),
+      {
+        initialProps: {
+          user: currentUser,
+          currentMessages: messages,
+        },
+      }
+    );
+    const initialAdd = result.current.handleReactionAdd;
+    const initialRemove = result.current.handleReactionRemove;
+
+    rerender({
+      user: { ...currentUser },
+      currentMessages: [...messages, { _id: 'message-2', reactions: {} }],
+    });
+
+    expect(result.current.handleReactionAdd).toBe(initialAdd);
+    expect(result.current.handleReactionRemove).toBe(initialRemove);
+  });
+
+  it('rolls back only the current user reaction when add fails', async () => {
+    let currentMessages = [{
+      _id: 'message-1',
+      reactions: { '👍': ['user-2'] },
+    }];
+    const setMessages = vi.fn(updater => {
+      currentMessages = updater(currentMessages);
+    });
+    socketClient.sendMessageReaction.mockImplementation(async () => {
+      currentMessages = currentMessages.map(message => ({
+        ...message,
+        reactions: { '👍': [...message.reactions['👍'], 'user-3'] },
+      }));
+      throw new Error('send failed');
+    });
+    const { result } = renderHook(() =>
+      useReactionHandling({ currentUser, setMessages })
+    );
+
+    await act(async () => {
+      await result.current.handleReactionAdd('message-1', '👍');
+    });
+
+    expect(currentMessages[0].reactions['👍']).toEqual(['user-2', 'user-3']);
+  });
+
+  it('restores only the current user reaction when remove fails', async () => {
+    let currentMessages = [{
+      _id: 'message-1',
+      reactions: { '👍': ['user-1', 'user-2'] },
+    }];
+    const setMessages = vi.fn(updater => {
+      currentMessages = updater(currentMessages);
+    });
+    socketClient.sendMessageReaction.mockImplementation(async () => {
+      currentMessages = currentMessages.map(message => ({
+        ...message,
+        reactions: { '👍': [...message.reactions['👍'], 'user-3'] },
+      }));
+      throw new Error('send failed');
+    });
+    const { result } = renderHook(() =>
+      useReactionHandling({ currentUser, setMessages })
+    );
+
+    await act(async () => {
+      await result.current.handleReactionRemove('message-1', '👍');
+    });
+
+    expect(currentMessages[0].reactions['👍']).toEqual(['user-2', 'user-3', 'user-1']);
+  });
 });

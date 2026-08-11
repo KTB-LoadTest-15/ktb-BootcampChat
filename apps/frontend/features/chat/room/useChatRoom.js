@@ -144,7 +144,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     handleReactionAdd,
     handleReactionRemove,
     handleReactionUpdate,
-  } = useReactionHandling({ currentUser, messages, setMessages });
+  } = useReactionHandling({ currentUser, setMessages });
 
   const {
     connectionStatus: derivedConnectionStatus,

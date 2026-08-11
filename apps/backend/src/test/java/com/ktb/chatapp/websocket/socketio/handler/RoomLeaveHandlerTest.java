@@ -61,7 +61,8 @@ class RoomLeaveHandlerTest {
                 userRepository,
                 userBatchLoader,
                 userRooms,
-                messageResponseMapper);
+                messageResponseMapper,
+                (key, task, onReject) -> task.run());
     }
 
     @Test

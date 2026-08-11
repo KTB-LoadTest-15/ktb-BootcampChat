@@ -11,10 +11,12 @@ const UserMessage = ({
   currentUser = null,
   onReactionAdd,
   onReactionRemove,
+  onMessageRead,
   room = null
 }) => {
   // 메시지 DOM 요소에 대한 ref 생성
   const messageDomRef = useRef(null);
+
   const formattedTime = new Date(msg.timestamp).toLocaleString('ko-KR', {
     year: 'numeric',
     month: 'long',
@@ -86,6 +88,7 @@ const UserMessage = ({
               messageId={msg._id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
+              onMessageRead={onMessageRead}
             />
           </HStack>
         </div>
@@ -112,6 +115,7 @@ UserMessage.defaultProps = {
   currentUser: null,
   onReactionAdd: () => {},
   onReactionRemove: () => {},
+  onMessageRead: () => false,
   room: null
 };
 

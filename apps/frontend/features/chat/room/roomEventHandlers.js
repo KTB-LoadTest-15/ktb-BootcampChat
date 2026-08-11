@@ -1,4 +1,7 @@
-import { deriveUniqueSortedMessages } from '../messages/useMessageList';
+import {
+  collectUniqueMessages,
+  mergeSortedMessages,
+} from '../messages/useMessageList';
 
 export const processLoadedRoomMessages = ({
   loadedMessages,
@@ -13,16 +16,15 @@ export const processLoadedRoomMessages = ({
     throw new Error('Invalid messages format');
   }
 
-  const processedSnapshot = new Set(processedMessageIds.current);
-  processedMessageIds.current = deriveUniqueSortedMessages(
-    [],
-    loadedMessages,
-    processedSnapshot
-  ).processedMessageIds;
+  const {
+    messages: uniqueLoadedMessages,
+    processedMessageIds: nextProcessedMessageIds,
+  } = collectUniqueMessages(loadedMessages, processedMessageIds.current);
+  processedMessageIds.current = nextProcessedMessageIds;
 
   let nextMessages;
   setMessages(prev => {
-    nextMessages = deriveUniqueSortedMessages(prev, loadedMessages, processedSnapshot).messages;
+    nextMessages = mergeSortedMessages(prev, uniqueLoadedMessages);
     return nextMessages;
   });
   setHasMoreMessages(hasMore);
