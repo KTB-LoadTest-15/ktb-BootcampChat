@@ -2,7 +2,10 @@ package com.ktb.chatapp.service.message;
 
 import com.ktb.chatapp.model.Message;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -43,6 +46,15 @@ public interface MessageStore {
 
     /** 최근 {@code since} 이후의 메시지 수(방 활성도 지표). */
     long countRecentMessages(String roomId, LocalDateTime since);
+
+    /** 여러 방의 최근 메시지 수를 저장소에 맞는 배치 방식으로 조회한다. */
+    default Map<String, Long> countRecentMessages(Collection<String> roomIds, LocalDateTime since) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (String roomId : roomIds) {
+            counts.put(roomId, countRecentMessages(roomId, since));
+        }
+        return counts;
+    }
 
     /**
      * {@code before}보다 오래된 메시지를 timestamp 내림차순으로 최대 {@code limit}개 조회한다.

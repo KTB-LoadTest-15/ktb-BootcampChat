@@ -18,10 +18,6 @@ public interface RoomRepository extends MongoRepository<Room, String> {
     @Query(value = "{}", sort = "{ 'createdAt': -1 }")
     Optional<Room> findMostRecentRoom();
 
-    // Health Check용 단순 조회 (지연 시간 측정)
-    @Query(value = "{}", fields = "{ '_id': 1 }")
-    Optional<Room> findOneForHealthCheck();
-
     @Query("{'_id': ?0}")
     @Update("{'$addToSet': {'participantIds': ?1}}")
     void addParticipant(String roomId, String userId);

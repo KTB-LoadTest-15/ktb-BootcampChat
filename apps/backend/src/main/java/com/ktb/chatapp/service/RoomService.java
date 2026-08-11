@@ -38,9 +38,12 @@ public class RoomService {
             // MongoDB에서 최신순으로 정렬된 방 목록을 조회한다
             List<Room> rooms = roomRepository.findAllByOrderByCreatedAtDesc();
             Map<String, User> usersById = loadUsersById(rooms);
+            Map<String, Long> recentMessageCounts = recentMessageCounter.countRecentMessages(
+                    rooms.stream().map(Room::getId).toList());
 
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById))
+                .map(room -> mapToRoomResponse(room, name, usersById,
+                        recentMessageCounts.getOrDefault(room.getId(), 0L).intValue()))
                 .collect(Collectors.toList());
 
             PageMetadata metadata = PageMetadata.builder()
@@ -68,33 +71,18 @@ public class RoomService {
     }
 
     public HealthResponse getHealthStatus() {
+        long startTime = System.currentTimeMillis();
+
         try {
-            long startTime = System.currentTimeMillis();
-
-            // MongoDB 연결 상태 확인
-            boolean isMongoConnected = false;
-            long latency = 0;
-
-            try {
-                // 간단한 쿼리로 연결 상태 및 지연 시간 측정
-                roomRepository.findOneForHealthCheck();
-                long endTime = System.currentTimeMillis();
-                latency = endTime - startTime;
-                isMongoConnected = true;
-            } catch (Exception e) {
-                log.warn("MongoDB 연결 확인 실패", e);
-                isMongoConnected = false;
-            }
-
-            // 최근 활동 조회
+            // 최근 방 조회 한 번으로 연결 상태, 지연 시간, 최근 활동을 함께 확인한다.
             LocalDateTime lastActivity = roomRepository.findMostRecentRoom()
                     .map(Room::getCreatedAt)
                     .orElse(null);
+            long latency = System.currentTimeMillis() - startTime;
 
-            // 서비스 상태 정보 구성
             Map<String, HealthResponse.ServiceHealth> services = new HashMap<>();
             services.put("database", HealthResponse.ServiceHealth.builder()
-                .connected(isMongoConnected)
+                .connected(true)
                 .latency(latency)
                 .build());
 
@@ -105,10 +93,16 @@ public class RoomService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Health check 실행 중 에러 발생", e);
+            log.warn("MongoDB 연결 확인 실패", e);
+            Map<String, HealthResponse.ServiceHealth> services = new HashMap<>();
+            services.put("database", HealthResponse.ServiceHealth.builder()
+                .connected(false)
+                .latency(System.currentTimeMillis() - startTime)
+                .build());
+
             return HealthResponse.builder()
                 .success(false)
-                .services(new HashMap<>())
+                .services(services)
                 .build();
         }
     }
@@ -201,6 +195,12 @@ public class RoomService {
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name, Map<String, User> usersById) {
+        return mapToRoomResponse(room, name, usersById,
+                recentMessageCounter.countRecentMessages(room.getId()));
+    }
+
+    private RoomResponse mapToRoomResponse(
+            Room room, String name, Map<String, User> usersById, int recentMessageCount) {
         if (room == null) return null;
 
         User creator = usersById.get(room.getCreator());
@@ -211,8 +211,6 @@ public class RoomService {
             .map(usersById::get)
             .filter(java.util.Objects::nonNull)
             .toList();
-
-        int recentMessageCount = recentMessageCounter.countRecentMessages(room.getId());
 
         return RoomResponse.builder()
             .id(room.getId())
