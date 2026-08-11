@@ -17,7 +17,10 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
         borderRadius: '0.5rem',
         backgroundColor: 'var(--background-normal)',
         border: '1px solid var(--border-color)',
-        scrollBehavior: 'smooth',
+        // 자동화(부하테스트)가 scrollIntoView로 행을 뷰포트에 넣는 순간,
+        // smooth 애니메이션이 진행 중이면 대상이 움직이는 동안 옆 행 버튼이 클릭 지점을
+        // 가로채(intercepts pointer events) 실패한다. 즉시 스크롤로 그 창을 없앤다.
+        scrollBehavior: 'auto',
         WebkitOverflowScrolling: 'touch',
       }}
     >
