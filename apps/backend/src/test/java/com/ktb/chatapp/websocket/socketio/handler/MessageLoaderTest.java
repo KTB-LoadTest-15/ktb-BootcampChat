@@ -5,6 +5,7 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
+import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import net.datafaker.Faker;
@@ -135,6 +136,44 @@ class MessageLoaderTest {
             long next = result.getMessages().get(i + 1).getTimestamp();
             assertThat(current).isLessThanOrEqualTo(next);
         }
+    }
+
+    @Test
+    @DisplayName("loadMessages: senderId가 전부 null인 배치(AI/시스템 메시지)도 NPE 없이 로드된다")
+    void loadMessages_allNullSenderIds_loadsWithoutNpe() {
+        // 실제 UserBatchLoader를 주입해 findByIds의 실제 반환 경로(빈 배치 → 맵)를 탄다.
+        // (과거엔 Map.of()를 반환해 get(null)에서 NPE → catch로 빈 목록 반환되던 회귀 지점)
+        UserRepository userRepository = mock(UserRepository.class);
+        MessageLoader loader = new MessageLoader(
+                messageStore,
+                new UserBatchLoader(userRepository),
+                new MessageResponseMapper(fileRepository)
+        );
+
+        List<Message> nullSenderMessages = IntStream.range(0, 30)
+                .mapToObj(i -> {
+                    Message m = new Message();
+                    m.setId(faker.internet().uuid());
+                    m.setRoomId(roomId);
+                    m.setSenderId(null); // AI/시스템 메시지
+                    m.setContent(faker.lorem().sentence(10));
+                    m.setTimestamp(LocalDateTime.now().minusHours(30 - i));
+                    return m;
+                })
+                .toList();
+
+        when(messageStore.findMessagesBefore(eq(roomId), any(LocalDateTime.class), anyInt()))
+                .thenReturn(getMessagePage(nullSenderMessages, true));
+
+        FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
+        FetchMessagesResponse result = loader.loadMessages(req, userId);
+
+        // catch로 빈 목록이 반환되던 증상이 사라지고, 30개가 sender=null로 정상 매핑된다.
+        assertThat(result.getMessages()).hasSize(30);
+        assertThat(result.isHasMore()).isTrue();
+        assertThat(result.getMessages()).allSatisfy(m -> assertThat(m.getSender()).isNull());
+        // senderId가 전부 null이므로 조회할 non-null id가 없어 DB round-trip도 없다.
+        verify(userRepository, never()).findAllById(anyList());
     }
 
     @Test

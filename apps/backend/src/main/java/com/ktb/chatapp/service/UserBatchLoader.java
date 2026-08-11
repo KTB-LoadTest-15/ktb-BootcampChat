@@ -28,17 +28,21 @@ public class UserBatchLoader {
      *
      * <p>null id는 무시하고, 중복 id는 한 번만 조회한다. 존재하지 않는 id는 맵에서 빠진다
      * (기존 {@code findById().filter(present)} 의미와 동일). 왕복은 id 개수와 무관하게 1회.
+     *
+     * <p>반환 맵은 항상 null 키 조회를 허용한다(null → {@code null} 반환). 호출부가 sender/
+     * participant id에 null이 섞인 채로 {@code get(id)}를 호출해도 안전하도록 {@code HashMap}을
+     * 쓴다. 불변 맵({@code Map.of()})은 null 키 조회 시 NPE를 던지므로 여기서 반환하지 않는다.
      */
     public Map<String, User> findByIds(Collection<String> ids) {
         if (ids == null || ids.isEmpty()) {
-            return Map.of();
+            return new HashMap<>();
         }
         List<String> distinct = ids.stream()
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
         if (distinct.isEmpty()) {
-            return Map.of();
+            return new HashMap<>();
         }
         Map<String, User> byId = new HashMap<>(distinct.size());
         userRepository.findAllById(distinct).forEach(user -> byId.put(user.getId(), user));
