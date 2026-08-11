@@ -147,11 +147,18 @@ jobs:
           FILE_STORAGE_TYPE: ${{ vars.FILE_STORAGE_TYPE }}
           AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
           AWS_REGION: ${{ vars.AWS_REGION }}
+          FILE_CDN_PUBLIC_URL_ENABLED: ${{ vars.FILE_CDN_PUBLIC_URL_ENABLED }}
+          FILE_CDN_BASE_URL: ${{ vars.FILE_CDN_BASE_URL }}
         run: |
           set -euo pipefail
 
           if [ "${FILE_STORAGE_TYPE:-}" = "s3" ] && { [ -z "${AWS_S3_BUCKET:-}" ] || [ -z "${AWS_REGION:-}" ]; }; then
             echo "::error::FILE_STORAGE_TYPE=s3 requires repository variables AWS_S3_BUCKET and AWS_REGION."
+            exit 1
+          fi
+
+          if [ "${FILE_CDN_PUBLIC_URL_ENABLED:-false}" = "true" ] && [ -z "${FILE_CDN_BASE_URL:-}" ]; then
+            echo "::error::Public CloudFront file URLs require FILE_CDN_BASE_URL."
             exit 1
           fi
 
@@ -177,6 +184,8 @@ jobs:
           FILE_STORAGE_TYPE=$FILE_STORAGE_TYPE
           AWS_S3_BUCKET=$AWS_S3_BUCKET
           AWS_REGION=$AWS_REGION
+          FILE_CDN_PUBLIC_URL_ENABLED=${FILE_CDN_PUBLIC_URL_ENABLED:-false}
+          FILE_CDN_BASE_URL=$FILE_CDN_BASE_URL
           PORT=5001
           WS_PORT=5002
           EOF

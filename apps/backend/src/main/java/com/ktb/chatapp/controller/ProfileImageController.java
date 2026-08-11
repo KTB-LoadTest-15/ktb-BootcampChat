@@ -1,5 +1,6 @@
 package com.ktb.chatapp.controller;
 
+import com.ktb.chatapp.storage.CloudFrontPublicUrlService;
 import com.ktb.chatapp.storage.StorageKey;
 import com.ktb.chatapp.storage.StoragePort;
 import com.ktb.chatapp.util.FileUtil;
@@ -10,7 +11,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileImageController {
 
     private final StoragePort storagePort;
+    private final ObjectProvider<CloudFrontPublicUrlService> cloudFrontPublicUrlService;
 
     @Operation(summary = "프로필 이미지 조회", description = "프로필 이미지를 반환합니다. 인증이 필요하지 않습니다.")
     @ApiResponses({
@@ -39,14 +41,20 @@ public class ProfileImageController {
     })
     @SecurityRequirement(name = "")
     @GetMapping("/{filename:.+}")
-    public ResponseEntity<Resource> getProfileImage(
+    public ResponseEntity<?> getProfileImage(
             @Parameter(description = "조회할 프로필 이미지 파일명") @PathVariable String filename) {
 
         if (FileUtil.containsPathTraversal(filename)) {
             return ResponseEntity.badRequest().build();
         }
 
-        return storagePort.open(StorageKey.profile(filename))
+        String objectKey = StorageKey.profile(filename);
+        CloudFrontPublicUrlService cloudFront = cloudFrontPublicUrlService.getIfAvailable();
+        if (cloudFront != null) {
+            return ResponseEntity.status(302).location(cloudFront.url(objectKey)).build();
+        }
+
+        return storagePort.open(objectKey)
                 .map(resource -> ResponseEntity.ok()
                         .contentType(contentTypeOf(filename))
                         .body(resource))

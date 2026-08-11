@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -27,6 +28,7 @@ public class S3Storage implements StoragePort, PresignedUploadPort {
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final ObjectProvider<CloudFrontPublicUrlService> cloudFrontPublicUrlService;
 
     @Value("${file.s3.bucket}")
     private String bucket;
@@ -62,6 +64,11 @@ public class S3Storage implements StoragePort, PresignedUploadPort {
     @Override
     public Optional<URI> offloadUrl(
             String key, Duration ttl, ContentDisposition disposition) {
+        CloudFrontPublicUrlService cloudFront = cloudFrontPublicUrlService.getIfAvailable();
+        if (cloudFront != null && StorageKey.isChat(key) && disposition.isInline()) {
+            return Optional.of(cloudFront.url(key));
+        }
+
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)

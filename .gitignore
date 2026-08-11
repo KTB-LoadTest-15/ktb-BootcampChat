@@ -49,3 +49,8 @@ pnpm-debug.log*
 # Local agent instructions
 # =========================
 AGENTS.md
+
+# ==========================
+# Reports
+# =========================
+Reports/
