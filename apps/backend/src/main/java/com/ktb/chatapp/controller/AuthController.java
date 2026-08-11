@@ -8,6 +8,7 @@ import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionCreationResult;
 import com.ktb.chatapp.service.SessionMetadata;
 import com.ktb.chatapp.service.SessionService;
+import com.ktb.chatapp.security.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -163,15 +164,14 @@ public class AuthController {
         if (errors != null) return errors;
         
         try {
-            // Authenticate user
-            User user = userRepository.findByEmail(loginRequest.getEmail().toLowerCase())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+            // Authenticate user and reuse the user loaded by UserDetailsService.
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
-                            user.getEmail(),
+                            loginRequest.getEmail().toLowerCase(),
                             loginRequest.getPassword()
                     )
             );
+            User user = ((AuthenticatedUser) authentication.getPrincipal()).user();
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             
