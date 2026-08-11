@@ -80,6 +80,10 @@ class FileService {
       return validationResult;
     }
 
+    if (process.env.NEXT_PUBLIC_FILE_UPLOAD_MODE === 'presigned') {
+      return this.uploadFileWithPresignedUrl(file, onProgress);
+    }
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -149,6 +153,50 @@ class FileService {
       return this.handleUploadError(error);
     }
   }
+
+  async uploadFileWithPresignedUrl(file, onProgress) {
+    try {
+      const baseUrl = this.baseUrl || '';
+      const presignResponse = await axiosInstance.post(
+        `${baseUrl}/api/files/upload/presign`,
+        {
+          originalname: file.name,
+          mimetype: file.type,
+          size: file.size
+        },
+        { withCredentials: true, timeout: 10000 }
+      );
+
+      const { uploadUrl, objectKey, file: fileData } = presignResponse.data || {};
+      if (!uploadUrl || !objectKey || !fileData?._id) {
+        throw new Error('S3 업로드 URL 응답이 올바르지 않습니다.');
+      }
+
+      await axios.put(uploadUrl, file, {
+        headers: { 'Content-Type': file.type },
+        timeout: 30000,
+        onUploadProgress: (progressEvent) => {
+          if (onProgress && progressEvent.total) {
+            onProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+          }
+        }
+      });
+
+      return {
+        success: true,
+        data: {
+          success: true,
+          objectKey,
+          file: {
+            ...fileData,
+            url: this.getFileUrl(fileData.filename, true)
+          }
+        }
+      };
+    } catch (error) {
+      return this.handleUploadError(error);
+    }
+  }
   getFileUrl(filename, forPreview = false) {
     if (!filename) return '';
 
@@ -160,18 +208,23 @@ class FileService {
   getPreviewUrl(file, token, sessionId, withAuth = true) {
     if (!file?.filename) return '';
 
-    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/files/view/${file.filename}`;
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    const baseUrl = `${apiBaseUrl}/api/files/view/${file.filename}`;
 
     if (!withAuth) return baseUrl;
 
     if (!token || !sessionId) return baseUrl;
 
-    // URL 객체 생성 전 프로토콜 확인
-    const url = new URL(baseUrl);
-    url.searchParams.append('token', encodeURIComponent(token));
-    url.searchParams.append('sessionId', encodeURIComponent(sessionId));
+    // URLSearchParams가 인코딩을 담당하므로 값을 미리 encodeURIComponent 하지 않는다.
+    if (apiBaseUrl) {
+      const url = new URL(baseUrl);
+      url.searchParams.set('token', token);
+      url.searchParams.set('sessionId', sessionId);
+      return url.toString();
+    }
 
-    return url.toString();
+    const params = new URLSearchParams({ token, sessionId });
+    return `${baseUrl}?${params.toString()}`;
   }
 
   getFileExtension(filename) {

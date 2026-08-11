@@ -36,7 +36,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_SOCKET_URL: ${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
-          FRONTEND_FILE_UPLOAD_MODE: ${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
+          NEXT_PUBLIC_FILE_UPLOAD_MODE: ${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
           FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_HOST: ${{ secrets.BASTION_HOST }}
@@ -44,9 +44,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ] || [ -z "${FRONTEND_FILE_UPLOAD_MODE:-}" ]; then
+          if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ] || [ -z "${NEXT_PUBLIC_FILE_UPLOAD_MODE:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping frontend CD because one or more required frontend variables are not set."
+            echo "::notice::Skipping frontend CD because a required frontend repository variable is not set."
             exit 0
           fi
 
@@ -97,7 +97,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.FRONTEND_NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_SOCKET_URL=${{ vars.FRONTEND_NEXT_PUBLIC_SOCKET_URL }}
-            FRONTEND_FILE_UPLOAD_MODE=${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
+            NEXT_PUBLIC_FILE_UPLOAD_MODE=${{ vars.FRONTEND_FILE_UPLOAD_MODE }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
