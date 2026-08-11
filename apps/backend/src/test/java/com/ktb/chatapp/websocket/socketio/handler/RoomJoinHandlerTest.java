@@ -14,7 +14,6 @@ import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.service.readcursor.ReadCursorStore;
 import com.ktb.chatapp.repository.RoomRepository;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -46,7 +45,6 @@ class RoomJoinHandlerTest {
     @Mock private SocketIOServer socketIOServer;
     @Mock private MessageStore messageStore;
     @Mock private RoomRepository roomRepository;
-    @Mock private UserRepository userRepository;
     @Mock private UserBatchLoader userBatchLoader;
     @Mock private UserRooms userRooms;
     @Mock private MessageLoader messageLoader;
@@ -64,7 +62,6 @@ class RoomJoinHandlerTest {
                 socketIOServer,
                 messageStore,
                 roomRepository,
-                userRepository,
                 userBatchLoader,
                 userRooms,
                 messageLoader,
@@ -101,7 +98,6 @@ class RoomJoinHandlerTest {
                 .build();
 
         when(client.get("user")).thenReturn(socketUser);
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
         when(userBatchLoader.findByIds(any())).thenReturn(Map.of("user-1", user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
@@ -143,7 +139,6 @@ class RoomJoinHandlerTest {
                 .build();
 
         when(client.get("user")).thenReturn(socketUser);
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(true); // 이미 멤버
         when(messageLoader.loadMessages(any(FetchMessagesRequest.class), eq("user-1")))

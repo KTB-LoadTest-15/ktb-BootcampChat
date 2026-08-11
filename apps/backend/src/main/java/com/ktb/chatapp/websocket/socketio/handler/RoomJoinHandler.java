@@ -12,7 +12,6 @@ import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.service.readcursor.ReadCursorStore;
@@ -41,7 +40,6 @@ public class RoomJoinHandler {
     private final SocketIOServer socketIOServer;
     private final MessageStore messageStore;
     private final RoomRepository roomRepository;
-    private final UserRepository userRepository;
     private final UserBatchLoader userBatchLoader;
     private final UserRooms userRooms;
     private final MessageLoader messageLoader;
@@ -70,11 +68,8 @@ public class RoomJoinHandler {
                 return;
             }
             
-            if (userRepository.findById(userId).isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
-                return;
-            }
-            
+            // SocketUser는 AuthTokenListenerImpl이 세션 검증과 사용자 조회를 모두 통과한 연결에만
+            // 저장한다. 방 입장마다 같은 사용자를 MongoDB에서 다시 확인하지 않는다.
             Room room = roomRepository.findById(roomId).orElse(null);
             if (room == null) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
