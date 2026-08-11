@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --keepAliveTimeout 90000",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "format": "prettier . --write --ignore-path .prettierignore",
