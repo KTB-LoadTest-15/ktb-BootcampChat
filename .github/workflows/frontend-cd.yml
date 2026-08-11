@@ -1,17 +1,17 @@
 name: Frontend CD
 
 on:
-  # main에 반영된 프론트 변경만 실제 배포 대상으로 본다.
-  push:
-    branches:
-      - main
-    paths:
-      # 이미지 빌드에 영향 주는 프론트/워크스페이스 파일을 함께 감시한다.
-      - "apps/frontend/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - ".github/workflows/frontend-cd.yml"
+#  # main에 반영된 프론트 변경만 실제 배포 대상으로 본다.
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      # 이미지 빌드에 영향 주는 프론트/워크스페이스 파일을 함께 감시한다.
+#      - "apps/frontend/**"
+#      - "package.json"
+#      - "pnpm-lock.yaml"
+#      - "pnpm-workspace.yaml"
+#      - ".github/workflows/frontend-cd.yml"
   workflow_dispatch: {}
 
 # 운영 배포는 직렬화해서 동시에 두 번 돌지 않게 한다.
