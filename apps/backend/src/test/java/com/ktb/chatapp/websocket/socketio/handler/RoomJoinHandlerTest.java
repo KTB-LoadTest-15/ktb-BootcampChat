@@ -64,7 +64,8 @@ class RoomJoinHandlerTest {
                 userRooms,
                 messageLoader,
                 messageResponseMapper,
-                roomLeaveHandler);
+                roomLeaveHandler,
+                (key, task, onReject) -> task.run());
     }
 
     @Test

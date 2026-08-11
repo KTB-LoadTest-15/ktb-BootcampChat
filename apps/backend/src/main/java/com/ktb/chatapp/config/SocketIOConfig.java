@@ -45,7 +45,9 @@ public class SocketIOConfig {
         
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
-        socketConfig.setTcpNoDelay(false);
+        // 채팅은 소형 프레임이 빈번하다. Nagle(작은 패킷을 모아 보냄)은 이런 워크로드에서
+        // 메시지당 최대 ~수십 ms 지연을 유발하므로 끈다(tcpNoDelay=true).
+        socketConfig.setTcpNoDelay(true);
         socketConfig.setAcceptBackLog(10);
         socketConfig.setTcpSendBufferSize(4096);
         socketConfig.setTcpReceiveBufferSize(4096);
@@ -94,5 +96,22 @@ public class SocketIOConfig {
     @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
     public ChatDataStore chatDataStore() {
         return new LocalChatDataStore();
+    }
+
+    /**
+     * 중복 로그인 유예 종료 예약용 공유 스케줄러.
+     *
+     * <p>접속마다 {@code new Thread(){sleep}}를 만들던 것을 대체한다(로그인 폭주 시 스레드 폭발/네이티브
+     * 메모리 고갈 방지, P1-7). 예약 작업은 유예 후 session_ended 1건을 보내는 가벼운 작업이라 단일
+     * 데몬 스레드로 충분하다.
+     */
+    @Bean(destroyMethod = "shutdownNow")
+    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
+    public java.util.concurrent.ScheduledExecutorService duplicateLoginScheduler() {
+        return java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "dup-login-grace");
+            t.setDaemon(true);
+            return t;
+        });
     }
 }

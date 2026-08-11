@@ -20,7 +20,10 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @Import(MongoTestContainer.class)
 @TestPropertySource(properties = {
-    "socketio.enabled=false"
+    "socketio.enabled=false",
+    // 이 스위트는 검증 시 lastActivity가 매번 갱신·저장되는 동작을 단언하므로 throttle을 끈다.
+    // throttle 자체의 write 절감은 SessionTouchThrottleQueryCountIntegrationTest에서 측정한다.
+    "session.touch.throttle-ms=0"
 })
 @DisplayName("SessionService 통합 테스트")
 class SessionServiceTest {

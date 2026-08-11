@@ -6,6 +6,7 @@ import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.repository.RoomRepository;
+import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,9 +29,20 @@ public class MessageFetchHandler {
 
     private final RoomRepository roomRepository;
     private final MessageLoader messageLoader;
+    private final SocketDispatcher socketDispatcher;
 
+    // 과거 메시지 조회(권한 체크 + 페이지 로드)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
     @OnEvent(FETCH_PREVIOUS_MESSAGES)
     public void handleFetchMessages(SocketIOClient client, FetchMessagesRequest data) {
+        String key = (data != null && data.roomId() != null) ? data.roomId() : sessionKey(client);
+        socketDispatcher.dispatch(
+                key,
+                () -> processFetchMessages(client, data),
+                () -> client.sendEvent(ERROR,
+                        Map.of("code", "LOAD_ERROR", "message", "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.")));
+    }
+
+    void processFetchMessages(SocketIOClient client, FetchMessagesRequest data) {
         String userId = getUserId(client);
         if (userId == null) {
             client.sendEvent(ERROR, Map.of(
@@ -76,5 +88,10 @@ public class MessageFetchHandler {
     private String getUserId(SocketIOClient client) {
         var user = (SocketUser) client.get("user");
         return user != null ? user.id() : null;
+    }
+
+    private static String sessionKey(SocketIOClient client) {
+        var sessionId = client.getSessionId();
+        return sessionId != null ? sessionId.toString() : "unknown";
     }
 }

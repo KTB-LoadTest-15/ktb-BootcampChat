@@ -7,6 +7,7 @@ import com.ktb.chatapp.dto.MessageReactionRequest;
 import com.ktb.chatapp.dto.MessageReactionResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.service.message.MessageStore;
+import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import java.util.Map;
 import java.util.Optional;
@@ -29,9 +30,20 @@ public class MessageReactionHandler {
     
     private final SocketIOServer socketIOServer;
     private final MessageStore messageStore;
-    
+    private final SocketDispatcher socketDispatcher;
+
+    // 리액션 처리(원자 갱신 + 브로드캐스트)를 event-loop에서 분리해 메시지 단위로 오프로드한다.
     @OnEvent(MESSAGE_REACTION)
     public void handleMessageReaction(SocketIOClient client, MessageReactionRequest data) {
+        String key = (data != null && data.getMessageId() != null) ? data.getMessageId() : sessionKey(client);
+        socketDispatcher.dispatch(
+                key,
+                () -> processMessageReaction(client, data),
+                () -> client.sendEvent(ERROR,
+                        Map.of("message", "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.")));
+    }
+
+    void processMessageReaction(SocketIOClient client, MessageReactionRequest data) {
         try {
             String userId = getUserId(client);
             if (userId == null || userId.isBlank()) {
@@ -80,5 +92,10 @@ public class MessageReactionHandler {
     private String getUserId(SocketIOClient client) {
         var user = (SocketUser) client.get("user");
         return user != null ? user.id() : null;
+    }
+
+    private static String sessionKey(SocketIOClient client) {
+        var sessionId = client.getSessionId();
+        return sessionId != null ? sessionId.toString() : "unknown";
     }
 }

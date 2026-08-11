@@ -8,10 +8,11 @@ import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -28,11 +29,16 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
 public class ConnectionLoginHandler {
 
+    /** 중복 로그인 감지 후 기존 세션을 실제 종료하기까지의 유예(초). */
+    private static final long DUPLICATE_LOGIN_GRACE_SECONDS = 10;
+
     private final SocketIOServer socketIOServer;
     private final ConnectedUsers connectedUsers;
     private final UserRooms userRooms;
     private final RoomJoinHandler roomJoinHandler;
     private final RoomLeaveHandler roomLeaveHandler;
+    /** 중복 로그인 유예 종료를 예약하는 공유 스케줄러(접속마다 스레드를 새로 만들지 않는다). */
+    private final ScheduledExecutorService duplicateLoginScheduler;
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
@@ -40,12 +46,14 @@ public class ConnectionLoginHandler {
             UserRooms userRooms,
             RoomJoinHandler roomJoinHandler,
             RoomLeaveHandler roomLeaveHandler,
+            ScheduledExecutorService duplicateLoginScheduler,
             MeterRegistry meterRegistry) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
         this.userRooms = userRooms;
         this.roomJoinHandler = roomJoinHandler;
         this.roomLeaveHandler = roomLeaveHandler;
+        this.duplicateLoginScheduler = duplicateLoginScheduler;
 
         // Register gauge metric for concurrent users
         Gauge.builder("socketio.concurrent.users", connectedUsers::size)
@@ -159,17 +167,16 @@ public class ConnectionLoginHandler {
                 "timestamp", System.currentTimeMillis()
         ));
         
-        new Thread(() -> {
+        // 접속마다 raw Thread를 만들지 않고 공유 스케줄러에 유예 종료를 예약한다(스레드 폭발 방지).
+        duplicateLoginScheduler.schedule(() -> {
             try {
-                Thread.sleep(Duration.ofSeconds(10));
                 existingClient.sendEvent(SESSION_ENDED, Map.of(
                         "reason", "duplicate_login",
                         "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
                 ));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Error in duplicate login notification thread", e);
+            } catch (Exception e) {
+                log.error("Error sending delayed session_ended for duplicate login", e);
             }
-        }).start();
+        }, DUPLICATE_LOGIN_GRACE_SECONDS, TimeUnit.SECONDS);
     }
 }

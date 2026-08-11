@@ -15,6 +15,7 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
+import com.ktb.chatapp.websocket.socketio.SocketDispatcher;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -45,9 +46,19 @@ public class RoomJoinHandler {
     private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
-    
+    private final SocketDispatcher socketDispatcher;
+
+    // 방 입장 처리(DB 조회·저장·브로드캐스트)를 event-loop에서 분리해 방(roomId) 단위로 오프로드한다.
     @OnEvent(JOIN_ROOM)
     public void handleJoinRoom(SocketIOClient client, String roomId) {
+        socketDispatcher.dispatch(
+                orderingKey(roomId, client),
+                () -> processJoinRoom(client, roomId),
+                () -> client.sendEvent(JOIN_ROOM_ERROR,
+                        Map.of("message", "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.")));
+    }
+
+    void processJoinRoom(SocketIOClient client, String roomId) {
         try {
             String userId = getUserId(client);
             String userName = getUserName(client);
@@ -143,6 +154,15 @@ public class RoomJoinHandler {
         }
     }
     
+    // 순서 보장 key: 방이 있으면 roomId(방 단위 FIFO), 없으면 연결 세션 id.
+    private static String orderingKey(String roomId, SocketIOClient client) {
+        if (roomId != null) {
+            return roomId;
+        }
+        var sessionId = client.getSessionId();
+        return sessionId != null ? sessionId.toString() : "unknown";
+    }
+
     private SocketUser getUser(SocketIOClient client) {
         return client.get("user");
     }
