@@ -167,8 +167,7 @@ public class RoomController {
                 );
             }
 
-            Room savedRoom = roomService.createRoom(createRoomRequest, principal.getName());
-            RoomResponse roomResponse = mapToRoomResponse(savedRoom, principal.getName());
+            RoomResponse roomResponse = roomService.createRoom(createRoomRequest, principal.getName());
 
             return ResponseEntity.status(201).body(
                 Map.of(

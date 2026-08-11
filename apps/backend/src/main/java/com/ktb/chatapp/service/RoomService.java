@@ -151,7 +151,7 @@ public class RoomService {
         }
     }
 
-    public Room createRoom(CreateRoomRequest createRoomRequest, String name) {
+    public RoomResponse createRoom(CreateRoomRequest createRoomRequest, String name) {
         User creator = userRepository.findByEmail(name)
             .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + name));
 
@@ -166,16 +166,16 @@ public class RoomService {
         }
 
         Room savedRoom = roomRepository.save(room);
+        RoomResponse roomResponse = buildCreatedRoomResponse(savedRoom, creator, name);
         
         // Publish event for room created
         try {
-            RoomResponse roomResponse = mapToRoomResponse(savedRoom, name);
             eventPublisher.publishEvent(new RoomCreatedEvent(this, roomResponse));
         } catch (Exception e) {
             log.error("roomCreated 이벤트 발행 실패", e);
         }
         
-        return savedRoom;
+        return roomResponse;
     }
 
     public Optional<Room> findRoomById(String roomId) {
@@ -278,6 +278,27 @@ public class RoomService {
                 && name != null
                 && name.equalsIgnoreCase(creator.getEmail()))
             .recentMessageCount(recentMessageCount)
+            .build();
+    }
+
+    private RoomResponse buildCreatedRoomResponse(Room room, User creator, String requesterEmail) {
+        UserResponse creatorSummary = UserResponse.builder()
+            .id(creator.getId())
+            .name(creator.getName() != null ? creator.getName() : "알 수 없음")
+            .email(creator.getEmail() != null ? creator.getEmail() : "")
+            .profileImage(FileUrl.of(creator.getProfileImage()))
+            .build();
+
+        return RoomResponse.builder()
+            .id(room.getId())
+            .name(room.getName() != null ? room.getName() : "제목 없음")
+            .hasPassword(room.isHasPassword())
+            .creator(creatorSummary)
+            .participants(List.of(creatorSummary))
+            .createdAtDateTime(room.getCreatedAt())
+            .isCreator(requesterEmail != null
+                && requesterEmail.equalsIgnoreCase(creator.getEmail()))
+            .recentMessageCount(0)
             .build();
     }
 }
