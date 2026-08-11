@@ -20,12 +20,6 @@ const renderRoomList = () =>
       router: { push: vi.fn() },
       connectionStatus: CONNECTION_STATUS.CONNECTED,
       setConnectionStatus: vi.fn(),
-      retryCount: 0,
-      setRetryCount: vi.fn(),
-      isRetrying: false,
-      setIsRetrying: vi.fn(),
-      getRetryDelay: vi.fn(() => 1000),
-      attemptConnection: vi.fn(() => Promise.resolve(true)),
     })
   );
 
@@ -101,5 +95,64 @@ describe('useRoomList', () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+  });
+
+  it('reuses the in-flight room list request for concurrent refreshes', async () => {
+    let resolveRequest;
+    axiosInstance.get.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      })
+    );
+
+    const { result } = renderRoomList();
+
+    await act(async () => {
+      const firstRefresh = result.current.refreshRooms();
+      const secondRefresh = result.current.refreshRooms({ silent: true });
+
+      expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+
+      resolveRequest(roomsResponse([{ _id: 'room-1' }]));
+      await Promise.all([firstRefresh, secondRefresh]);
+    });
+
+    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+  });
+
+  it('skips a background refresh while the last successful result is fresh', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T00:00:00Z'));
+    axiosInstance.get.mockResolvedValue(roomsResponse([{ _id: 'room-1' }]));
+
+    const { result } = renderRoomList();
+
+    await act(async () => {
+      await result.current.refreshRooms();
+      await result.current.refreshRooms({
+        silent: true,
+        staleAfterMs: 120000,
+        maxRetries: 0,
+      });
+    });
+
+    expect(axiosInstance.get).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(120000);
+
+    await act(async () => {
+      await result.current.refreshRooms({
+        silent: true,
+        staleAfterMs: 120000,
+        maxRetries: 0,
+      });
+    });
+
+    expect(axiosInstance.get).toHaveBeenCalledTimes(2);
+    expect(axiosInstance.get).toHaveBeenLastCalledWith('/api/rooms', {
+      maxRetries: 0,
+    });
+
+    vi.useRealTimers();
   });
 });

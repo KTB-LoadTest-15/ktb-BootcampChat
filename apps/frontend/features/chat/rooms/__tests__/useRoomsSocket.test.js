@@ -47,8 +47,9 @@ describe('useRoomsSocket', () => {
   it('subscribes to room-list on mount and resubscribes after reconnect', async () => {
     const socket = createSocket();
     const setConnectionStatus = vi.fn();
+    const onReconnect = vi.fn();
 
-    renderRoomsSocket(socket, { setConnectionStatus });
+    renderRoomsSocket(socket, { setConnectionStatus, onReconnect });
 
     await waitFor(() => {
       expect(socket.emit).toHaveBeenCalledWith('subscribeRoomList');
@@ -61,6 +62,7 @@ describe('useRoomsSocket', () => {
 
     expect(socket.emit).toHaveBeenCalledTimes(2);
     expect(socket.emit).toHaveBeenLastCalledWith('subscribeRoomList');
+    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
   it('unsubscribes and removes list listeners without disconnecting the shared socket', async () => {

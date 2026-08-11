@@ -10,6 +10,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.IndexDirection;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -33,6 +35,7 @@ public class Room {
     private String password;
 
     @CreatedDate
+    @Indexed(name = "rooms_created_at_desc", direction = IndexDirection.DESCENDING)
     private LocalDateTime createdAt;
 
     @Field("participantIds")
