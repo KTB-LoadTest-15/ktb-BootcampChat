@@ -64,25 +64,13 @@ public class Message {
     @Builder.Default
     private Map<String, Set<String>> reactions = new HashMap<>();
 
-    // 메시지 읽음 상태 관리
-    @Builder.Default
-    private List<MessageReader> readers = new ArrayList<>();
+    // 읽음 상태는 read cursor(방-멤버 커서, ReadCursorStore)로 이관됨. per-message readers 미사용.
 
     // 자유 형식 metadata 저장 필드
     @Builder.Default
     private Map<String, Object> metadata = new HashMap<>();
 
-    // 메시지 읽음 상태를 나타내는 내부 클래스
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class MessageReader {
-        private String userId;
-        private LocalDateTime readAt;
-    }
-    
-    
+
     public long toTimestampMillis() {
         return timestamp.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
     }

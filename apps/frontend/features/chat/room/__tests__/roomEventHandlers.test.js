@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   appendIncomingMessage,
-  applyReadReceipts,
   createRoomEventHandlers,
+  mergeReadCursor,
+  mergeReadCursorMap,
   processLoadedRoomMessages,
 } from '../roomEventHandlers';
 
@@ -35,34 +36,27 @@ describe('roomEventHandlers', () => {
     expect(initialLoadCompletedRef.current).toBe(true);
   });
 
-  it('applies read receipts without duplicating existing readers', () => {
-    const messages = [
-      {
-        _id: 'message-1',
-        readers: [{ userId: 'user-2', readAt: 'existing' }],
-      },
-      {
-        _id: 'message-2',
-        readers: [],
-      },
-    ];
+  it('advances a read cursor only forward, preserving reference on no-op', () => {
+    const cursors = { 'user-2': 2000 };
 
+    // 전진: 더 큰 ts는 반영
+    expect(mergeReadCursor(cursors, { userId: 'user-2', lastReadTs: 3000 })).toEqual({
+      'user-2': 3000,
+    });
+    // 신규 사용자 추가
+    expect(mergeReadCursor(cursors, { userId: 'user-3', lastReadTs: 1000 })).toEqual({
+      'user-2': 2000,
+      'user-3': 1000,
+    });
+    // 역행/동일: 동일 참조 반환(리렌더 방지)
+    expect(mergeReadCursor(cursors, { userId: 'user-2', lastReadTs: 1000 })).toBe(cursors);
+    expect(mergeReadCursor(cursors, { userId: 'user-2', lastReadTs: 2000 })).toBe(cursors);
+  });
+
+  it('merges an entire cursor map monotonically', () => {
     expect(
-      applyReadReceipts(messages, {
-        userId: 'user-2',
-        messageIds: ['message-1', 'message-2'],
-        timestamp: '2026-07-07T00:00:00.000Z',
-      })
-    ).toEqual([
-      {
-        _id: 'message-1',
-        readers: [{ userId: 'user-2', readAt: 'existing' }],
-      },
-      {
-        _id: 'message-2',
-        readers: [{ userId: 'user-2', readAt: '2026-07-07T00:00:00.000Z' }],
-      },
-    ]);
+      mergeReadCursorMap({ 'user-1': 1000, 'user-2': 5000 }, { 'user-1': 3000, 'user-2': 2000 })
+    ).toEqual({ 'user-1': 3000, 'user-2': 5000 });
   });
 
   it('appends incoming messages only once', () => {
@@ -119,6 +113,7 @@ describe('roomEventHandlers', () => {
     const initialLoadCompletedRef = { current: false };
     const setRoom = vi.fn();
     const setMessages = vi.fn();
+    const setReadCursors = vi.fn();
     const setLoadingMessages = vi.fn();
     const setError = vi.fn();
     const setHasMoreMessages = vi.fn();
@@ -137,6 +132,7 @@ describe('roomEventHandlers', () => {
       processMessages,
       setRoom,
       setMessages,
+      setReadCursors,
       setLoadingMessages,
       setError,
       setHasMoreMessages,
@@ -148,11 +144,7 @@ describe('roomEventHandlers', () => {
     });
 
     handlers.onParticipantsUpdate([{ _id: 'user-1' }]);
-    handlers.onMessagesRead({
-      userId: 'user-1',
-      messageIds: ['message-1'],
-      timestamp: '2026-07-07T00:00:00.000Z',
-    });
+    handlers.onMessagesRead({ cursors: { 'user-1': 1000 } });
     handlers.onMessage({ _id: 'message-1' });
     handlers.onPreviousMessagesLoaded({ messages: [{ _id: 'message-2' }], hasMore: true });
     handlers.onMessageReactionUpdate({ messageId: 'message-1' });
@@ -160,7 +152,8 @@ describe('roomEventHandlers', () => {
     handlers.onError({ code: 'MESSAGE_REJECTED', message: 'blocked' });
 
     expect(setRoom).toHaveBeenCalledWith(expect.any(Function));
-    expect(setMessages).toHaveBeenCalledTimes(2);
+    expect(setReadCursors).toHaveBeenCalledWith(expect.any(Function));
+    expect(setMessages).toHaveBeenCalledTimes(1);
     expect(processMessages).toHaveBeenCalledWith([{ _id: 'message-2' }], true, true);
     expect(setLoadingMessages).toHaveBeenCalledWith(false);
     expect(handleReactionUpdate).toHaveBeenCalledWith({ messageId: 'message-1' });

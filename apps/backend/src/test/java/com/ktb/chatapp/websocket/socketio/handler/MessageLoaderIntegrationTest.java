@@ -10,7 +10,6 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
-import com.ktb.chatapp.service.MessageReadStatusService;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MongoMessageStore;
 import java.time.LocalDateTime;
@@ -25,12 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 
 @SpringBootTest
 @Import({MongoTestContainer.class, RedisTestContainer.class})
@@ -52,9 +47,6 @@ class MessageLoaderIntegrationTest {
     @Autowired
     private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
 
-    @MockitoSpyBean
-    private MessageReadStatusService messageReadStatusService;
-
     private MessageLoader messageLoader;
     private Faker faker;
     private String roomId;
@@ -72,8 +64,7 @@ class MessageLoaderIntegrationTest {
         messageLoader = new MessageLoader(
                 new MongoMessageStore(messageRepository, mongoTemplate),
                 new UserBatchLoader(userRepository),
-                new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                new MessageResponseMapper(fileRepository)
         );
 
         // 테스트 사용자 생성 및 저장
@@ -83,9 +74,6 @@ class MessageLoaderIntegrationTest {
                 .email(faker.internet().emailAddress())
                 .build();
         userRepository.save(testUser);
-
-        // MessageReadStatusService mock 설정
-        doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
     }
 
     @AfterEach

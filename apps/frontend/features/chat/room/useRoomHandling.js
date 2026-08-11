@@ -5,6 +5,7 @@ import { Toast } from '@/components/Toast';
 import api, { getAuthHeaders } from '@/lib/api/client';
 import {
   createRoomEventHandlers,
+  mergeReadCursorMap,
   processLoadedRoomMessages,
 } from './roomEventHandlers';
 
@@ -34,6 +35,7 @@ export const useRoomHandling = ({
     setRoom,
     setError,
     setMessages,
+    setReadCursors,
     setHasMoreMessages,
     setLoadingMessages,
     setupStarted,
@@ -86,6 +88,7 @@ export const useRoomHandling = ({
         processMessages,
         setRoom,
         setMessages,
+        setReadCursors,
         setLoadingMessages,
         setError,
         setHasMoreMessages,
@@ -111,6 +114,7 @@ export const useRoomHandling = ({
     initialLoadCompletedRef,
     setRoom,
     setMessages,
+    setReadCursors,
     onReplace,
   ]);
 
@@ -265,6 +269,10 @@ export const useRoomHandling = ({
       processMessages(joinResult.messages, joinResult.hasMore, true);
     }
 
+    if (joinResult?.readCursors) {
+      setReadCursors(prev => mergeReadCursorMap(prev, joinResult.readCursors));
+    }
+
     if (mountedRef.current) {
       setupCompleteRef.current = true;
     }
@@ -275,6 +283,7 @@ export const useRoomHandling = ({
     setupCompleteRef,
     joinRoom,
     processMessages,
+    setReadCursors,
   ]);
 
   const loadInitialMessages = useCallback(
@@ -373,6 +382,10 @@ export const useRoomHandling = ({
           } else {
             await loadInitialMessages(roomId);
           }
+
+          if (joinResult?.readCursors) {
+            setReadCursors(joinResult.readCursors);
+          }
         }
 
         if (mountedRef.current) {
@@ -420,6 +433,7 @@ export const useRoomHandling = ({
     setupStarted,
     setupSucceeded,
     setupFailed,
+    setReadCursors,
     currentUser,
     initializingRef,
     setupCompleteRef,

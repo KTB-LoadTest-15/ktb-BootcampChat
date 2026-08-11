@@ -5,7 +5,6 @@ import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
-import com.ktb.chatapp.service.MessageReadStatusService;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
 import net.datafaker.Faker;
@@ -39,9 +38,6 @@ class MessageLoaderTest {
     @Mock
     private FileRepository fileRepository;
 
-    @Mock
-    private MessageReadStatusService messageReadStatusService;
-
     private MessageLoader messageLoader;
 
     private Faker faker;
@@ -58,8 +54,7 @@ class MessageLoaderTest {
         messageLoader = new MessageLoader(
                 messageStore,
                 userBatchLoader,
-                new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                new MessageResponseMapper(fileRepository)
         );
 
         var testUser = User.builder()
@@ -77,7 +72,6 @@ class MessageLoaderTest {
                 .toList();
 
         lenient().when(userBatchLoader.findByIds(anyCollection())).thenReturn(Map.of(userId, testUser));
-        lenient().doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
     }
 
     private Message createMessage(String id, LocalDateTime timestamp) {

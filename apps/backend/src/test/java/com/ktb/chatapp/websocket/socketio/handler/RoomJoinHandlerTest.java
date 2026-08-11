@@ -12,6 +12,7 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.service.UserBatchLoader;
 import com.ktb.chatapp.service.message.MessageStore;
+import com.ktb.chatapp.service.readcursor.ReadCursorStore;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
@@ -48,6 +49,7 @@ class RoomJoinHandlerTest {
     @Mock private MessageLoader messageLoader;
     @Mock private MessageResponseMapper messageResponseMapper;
     @Mock private RoomLeaveHandler roomLeaveHandler;
+    @Mock private ReadCursorStore readCursorStore;
     @Mock private SocketIOClient client;
     @Mock private BroadcastOperations roomOperations;
 
@@ -65,7 +67,8 @@ class RoomJoinHandlerTest {
                 messageLoader,
                 messageResponseMapper,
                 roomLeaveHandler,
-                (key, task, onReject) -> task.run());
+                (key, task, onReject) -> task.run(),
+                readCursorStore);
     }
 
     @Test

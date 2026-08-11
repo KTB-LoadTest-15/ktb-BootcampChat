@@ -13,6 +13,7 @@
     "test:rampup": "node ramp-up-test.js",
     "test:rampup:small": "node ramp-up-test.js --max-users=200 --sustain-duration=120",
     "test:rampup:large": "node ramp-up-test.js --max-users=1000 --min-users-per-second=10 --max-users-per-second=20 --sustain-duration=300",
+    "test:auth-api": "node auth-api-load.js",
     "create-users": "node create-test-users.js"
   },
   "keywords": [

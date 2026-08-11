@@ -69,7 +69,6 @@ class MongoMessageBaselineQueryCountIntegrationTest {
         m.setContent(faker.lorem().sentence());
         m.setType(MessageType.text);
         m.setTimestamp(LocalDateTime.now());
-        m.setReaders(null);
         return m;
     }
 
