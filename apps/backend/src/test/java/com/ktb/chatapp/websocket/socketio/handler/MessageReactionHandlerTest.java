@@ -6,7 +6,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.MessageReactionRequest;
 import com.ktb.chatapp.dto.MessageReactionResponse;
 import com.ktb.chatapp.model.Message;
-import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.service.message.MessageStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import java.util.Optional;
 import java.util.Set;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 class MessageReactionHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
+    @Mock private MessageStore messageStore;
     @Mock private SocketIOClient client;
     @Mock private BroadcastOperations roomOperations;
 
@@ -38,7 +38,8 @@ class MessageReactionHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new MessageReactionHandler(socketIOServer, messageRepository);
+        handler = new MessageReactionHandler(
+                socketIOServer, messageStore, (key, task, onReject) -> task.run());
     }
 
     @Test
@@ -48,28 +49,59 @@ class MessageReactionHandlerTest {
         handler.handleMessageReaction(client, new MessageReactionRequest("👍", "message-1", "add", "👍"));
 
         verify(client).sendEvent(eq(ERROR), any());
-        verify(messageRepository, never()).save(any());
+        verify(messageStore, never()).addReaction(any(), any(), any());
+        verify(messageStore, never()).removeReaction(any(), any(), any());
     }
 
     @Test
     void handleMessageReaction_addsReactionAndBroadcasts() {
         Message message = Message.builder().id("message-1").roomId("room-1").build();
+        message.addReaction("👍", "user-1");
         MessageReactionRequest request =
                 new MessageReactionRequest("👍", "message-1", "add", "👍");
 
         when(client.get("user"))
                 .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
-        when(messageRepository.findById("message-1")).thenReturn(Optional.of(message));
-        when(messageRepository.save(message)).thenReturn(message);
+        when(messageStore.addReaction("message-1", "👍", "user-1")).thenReturn(Optional.of(message));
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
 
         handler.handleMessageReaction(client, request);
 
-        verify(messageRepository).save(message);
+        verify(messageStore).addReaction("message-1", "👍", "user-1");
         ArgumentCaptor<Object> responseCaptor = ArgumentCaptor.forClass(Object.class);
         verify(roomOperations).sendEvent(eq(MESSAGE_REACTION_UPDATE), responseCaptor.capture());
         MessageReactionResponse response = (MessageReactionResponse) responseCaptor.getValue();
         assertEquals("message-1", response.getMessageId());
         assertEquals(Set.of("user-1"), response.getReactions().get("👍"));
+    }
+
+    @Test
+    void handleMessageReaction_messageNotFound_sendsError() {
+        MessageReactionRequest request =
+                new MessageReactionRequest("👍", "missing", "add", "👍");
+
+        when(client.get("user"))
+                .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
+        when(messageStore.addReaction("missing", "👍", "user-1")).thenReturn(Optional.empty());
+
+        handler.handleMessageReaction(client, request);
+
+        verify(client).sendEvent(eq(ERROR), any());
+        verify(socketIOServer, never()).getRoomOperations(any());
+    }
+
+    @Test
+    void handleMessageReaction_unsupportedType_sendsErrorWithoutStoreCall() {
+        MessageReactionRequest request =
+                new MessageReactionRequest("👍", "message-1", "toggle", "👍");
+
+        when(client.get("user"))
+                .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
+
+        handler.handleMessageReaction(client, request);
+
+        verify(client).sendEvent(eq(ERROR), any());
+        verify(messageStore, never()).addReaction(any(), any(), any());
+        verify(messageStore, never()).removeReaction(any(), any(), any());
     }
 }

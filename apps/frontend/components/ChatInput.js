@@ -280,6 +280,12 @@ const ChatInput = forwardRef(({
   }, [insertMention, messageInputRef]);
 
   const handleKeyDown = useCallback((e) => {
+    const isComposing = e.nativeEvent?.isComposing || e.keyCode === 229;
+
+    if (isComposing) {
+      return;
+    }
+
     if (showMentionList) {
       const participants = getFilteredParticipants(room); // room 객체 전달
       const participantsCount = participants.length;

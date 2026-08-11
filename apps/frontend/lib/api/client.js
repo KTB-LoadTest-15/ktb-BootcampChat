@@ -15,8 +15,6 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 /** 서버 생존 확인은 공통 타임아웃보다 짧게 끊는다. 호출하는 화면마다 값이 갈리지 않도록 여기서 정한다. */
 export const HEALTH_TIMEOUT_MS = 3000;
 
-const pendingRequests = new Map();
-
 export const getAuthHeaders = (session = loadStoredUser()) => {
   if (!session?.token) {
     return {};
@@ -61,15 +59,13 @@ export const createApiClient = ({
   );
 
   axiosInstance.interceptors.response.use(
-    (response) => {
-      const requestKey = `${response.config.method}:${response.config.url}`;
-      pendingRequests.delete(requestKey);
-
-      return response;
-    },
+    (response) => response,
     async (error) => {
       const config = error.config || {};
       config.retryCount = config.retryCount || 0;
+      const maxRetries = Number.isInteger(config.maxRetries)
+        ? Math.max(0, config.maxRetries)
+        : RETRY_CONFIG.maxRetries;
 
       if (isCanceledRequest(error)) {
         return Promise.reject(error);
@@ -93,7 +89,7 @@ export const createApiClient = ({
         return Promise.reject(error);
       }
 
-      if (isRetryableError(error) && config.retryCount < RETRY_CONFIG.maxRetries) {
+      if (isRetryableError(error) && config.retryCount < maxRetries) {
         config.retryCount++;
         const delay = getRetryDelay(config.retryCount);
 

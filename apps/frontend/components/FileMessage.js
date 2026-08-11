@@ -21,6 +21,7 @@ const FileMessage = ({
   currentUser = null,
   onReactionAdd,
   onReactionRemove,
+  onMessageRead,
   room = null
 }) => {
   const { user } = useAuth();
@@ -367,6 +368,7 @@ const FileMessage = ({
               messageId={msg._id}
               messageRef={messageDomRef}
               currentUserId={currentUser?._id || currentUser?.id}
+              onMessageRead={onMessageRead}
             />
           </HStack>
         </div>
@@ -397,7 +399,8 @@ FileMessage.defaultProps = {
     }
   },
   isMine: false,
-  currentUser: null
+  currentUser: null,
+  onMessageRead: () => false
 };
 
 export default React.memo(FileMessage);

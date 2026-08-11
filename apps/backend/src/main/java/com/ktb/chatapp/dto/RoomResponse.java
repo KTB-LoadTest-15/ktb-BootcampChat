@@ -38,6 +38,7 @@ public class RoomResponse {
     private LocalDateTime createdAtDateTime;
 
     @Schema(description = "현재 사용자가 생성자인지 여부", example = "true")
+    @JsonProperty("isCreator")
     private boolean isCreator;
 
     @Schema(description = "최근 30분간 메시지 수", example = "23")
