@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ErrorCircleIcon } from '@vapor-ui/icons';
 import {
   Box,
@@ -14,9 +16,10 @@ import {
   Callout
 } from '@vapor-ui/core';
 import { useAuth } from '@/contexts/AuthContext';
+import ChatHeader from '@/components/ChatHeader';
 import api from '@/lib/api/client';
 
-function NewChatRoom() {
+export default function NewChatRoom() {
   const router = useRouter();
   const { user: currentUser } = useAuth();
   const [formData, setFormData] = useState({
@@ -77,6 +80,8 @@ function NewChatRoom() {
   };
 
   return (
+    <>
+    <ChatHeader />
     <Box
       $css={{
         display: 'flex',
@@ -179,7 +184,6 @@ function NewChatRoom() {
         </VStack>
       </VStack>
     </Box>
+    </>
   );
 }
-
-export default NewChatRoom;

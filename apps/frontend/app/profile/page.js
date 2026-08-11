@@ -1,13 +1,34 @@
+'use client';
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { ErrorCircleIcon, CheckCircleIcon } from '@vapor-ui/icons';
 import { Button, Box, VStack, HStack, Field, Form, Text, TextInput, Callout } from '@vapor-ui/core';
 import authService from '@/services/authService';
-import { withAuth, useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
+import ChatHeader from '@/components/ChatHeader';
 import ProfileImageUpload from '@/components/ProfileImageUpload';
 import { generateColorFromEmail, getContrastTextColor } from '@/utils/colorUtils';
 
-const Profile = () => {
-  const { user, updateProfile: updateProfileContext, updateUser } = useAuth();
+const LoadingState = () => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      backgroundColor: 'var(--vapor-color-background)',
+      color: 'var(--vapor-color-text-primary)',
+    }}
+  >
+    <div>Loading...</div>
+  </div>
+);
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, updateProfile: updateProfileContext, updateUser, isAuthenticated, isLoading } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     newPassword: '',
@@ -17,6 +38,13 @@ const Profile = () => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const avatarStyleRef = useRef(null);
+
+  // 인증되지 않은 사용자는 로그인으로 보낸다 (Pages Router 의 withAuth 가드 대체).
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace(`/?redirect=${pathname}`);
+    }
+  }, [isAuthenticated, isLoading, pathname, router]);
 
   // 초기 폼 데이터 설정
   useEffect(() => {
@@ -85,9 +113,15 @@ const Profile = () => {
     }
   };
 
+  if (isLoading || !isAuthenticated) {
+    return <LoadingState />;
+  }
+
   if (!user) return null;
 
   return (
+    <>
+    <ChatHeader />
     <Box
       $css={{
         display: 'flex',
@@ -109,7 +143,7 @@ const Profile = () => {
         render={<Form onSubmit={handleSubmit} />}
       >
         <Text typography="heading4">프로필 설정</Text>
-        
+
         <Box $css={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
           <ProfileImageUpload
             currentImage={user.profileImage}
@@ -150,7 +184,7 @@ const Profile = () => {
               />
             </Box>
           </Field.Root>
-          
+
           <Field.Root>
             <Box render={<Field.Label />} $css={{ flexDirection: 'column' }}>
               <Text typography="subtitle2" foreground="normal-200">
@@ -170,7 +204,7 @@ const Profile = () => {
             </Box>
             <Field.Error match="valueMissing">이름을 입력해주세요.</Field.Error>
           </Field.Root>
-          
+
           <Field.Root>
             <Box render={<Field.Label />} $css={{ flexDirection: 'column' }}>
               <Text typography="subtitle2" foreground="normal-200">
@@ -195,7 +229,7 @@ const Profile = () => {
               유효한 비밀번호 형식이 아닙니다.
             </Field.Error>
           </Field.Root>
-          
+
           <Field.Root>
             <Box render={<Field.Label />} $css={{ flexDirection: 'column' }}>
               <Text typography="subtitle2" foreground="normal-200">
@@ -225,7 +259,6 @@ const Profile = () => {
         </VStack>
       </VStack>
     </Box>
+    </>
   );
-};
-
-export default withAuth(Profile);
+}

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { useRouter } from 'next/router';
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ErrorCircleIcon } from '@vapor-ui/icons';
-import { withoutAuth, useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import {
     Box,
     Button,
@@ -14,34 +16,45 @@ import {
     VStack,
 } from '@vapor-ui/core';
 
-const Login = () => {
+const LoadingState = () => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      backgroundColor: 'var(--vapor-color-background)',
+      color: 'var(--vapor-color-text-primary)',
+    }}
+  >
+    <div>Loading...</div>
+  </div>
+);
+
+export default function LoginPage() {
+  const router = useRouter();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const { login } = useAuth();
 
-  const validateForm = () => {
-    // 유효성 검사는 HTML5 폼 검증에 맡김
-    return true;
-  };
+  // 이미 로그인한 사용자는 /chat 으로 보낸다 (Pages Router 의 withoutAuth 가드 대체).
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace('/chat');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // 폼 유효성 검사
-    if (!validateForm()) {
-      return;
-    }
 
     setLoading(true);
     setError(null);
 
     try {
-      // 로그인 요청 데이터 준비
       const loginCredentials = {
         email: formData.email.trim(),
         password: formData.password
@@ -50,16 +63,20 @@ const Login = () => {
       // AuthContext의 login 메서드 사용 (API 호출 + 상태 저장)
       await login(loginCredentials);
 
-      // 리다이렉트
-      const redirectUrl = router.query.redirect || '/chat';
+      // App Router 에는 router.query 가 없으므로 현재 URL 의 쿼리에서 redirect 를 읽는다.
+      const redirectUrl =
+        new URLSearchParams(window.location.search).get('redirect') || '/chat';
       router.push(redirectUrl);
-
     } catch (err) {
       setError(err.message || '로그인 처리 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (isLoading || isAuthenticated) {
+    return <LoadingState />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-(--vapor-space-300) bg-(--vapor-color-background)">
@@ -159,6 +176,4 @@ const Login = () => {
       </VStack>
     </div>
   );
-};
-
-export default withoutAuth(Login);
+}

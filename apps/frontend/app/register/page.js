@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
-import { useRouter } from 'next/router';
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ErrorCircleIcon, CheckCircleIcon } from '@vapor-ui/icons';
+import { useAuth } from '@/contexts/AuthContext';
 import {
     Box,
     Button,
@@ -12,9 +15,25 @@ import {
     TextInput,
     VStack,
 } from '@vapor-ui/core';
-import { useAuth, withoutAuth } from '@/contexts/AuthContext';
 
-const Register = () => {
+const LoadingState = () => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100vh',
+      backgroundColor: 'var(--vapor-color-background)',
+      color: 'var(--vapor-color-text-primary)',
+    }}
+  >
+    <div>Loading...</div>
+  </div>
+);
+
+export default function RegisterPage() {
+  const router = useRouter();
+  const { register: registerContext, isAuthenticated, isLoading } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -24,8 +43,13 @@ const Register = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const { register: registerContext } = useAuth();
+
+  // 이미 로그인한 사용자는 /chat 으로 보낸다 (Pages Router 의 withoutAuth 가드 대체).
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace('/chat');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
   const validateForm = () => {
     // 비밀번호 일치 확인만 추가 검증 (나머지는 HTML5 폼 검증)
@@ -51,16 +75,20 @@ const Register = () => {
     try {
       const { name, email, password } = formData;
       await registerContext({ name, email, password });
-      
+
       setSuccess(true);
       setLoading(false);
 
-      await router.push('/');
+      router.push('/');
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');
       setLoading(false);
     }
   };
+
+  if (isLoading || isAuthenticated) {
+    return <LoadingState />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-[var(--vapor-space-300)] bg-[var(--vapor-color-background)]">
@@ -216,6 +244,4 @@ const Register = () => {
       </VStack>
     </div>
   );
-};
-
-export default withoutAuth(Register);
+}
