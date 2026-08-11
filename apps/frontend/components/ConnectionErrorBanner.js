@@ -1,6 +1,9 @@
 import { Text, VStack } from '@vapor-ui/core';
 
-const ConnectionErrorBanner = ({ message, title = '연결에 문제가 생겼어요' }) => (
+const ConnectionErrorBanner = ({
+  message,
+  title = '연결에 문제가 생겼어요',
+}) => (
   <VStack
     $css={{
       alignItems: 'center',
