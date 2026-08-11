@@ -11,8 +11,14 @@ export const useRoomsSocket = ({
   currentUser,
   setConnectionStatus,
   setRooms,
+  onReconnect,
 }) => {
   const socketRef = useRef(null);
+  const onReconnectRef = useRef(onReconnect);
+
+  useEffect(() => {
+    onReconnectRef.current = onReconnect;
+  }, [onReconnect]);
 
   useEffect(() => {
     if (!currentUser?.token) return;
@@ -41,6 +47,7 @@ export const useRoomsSocket = ({
 
             setConnectionStatus(CONNECTION_STATUS.CONNECTED);
             socket.emit('subscribeRoomList');
+            onReconnectRef.current?.();
           },
           disconnect: () => {
             setConnectionStatus(CONNECTION_STATUS.DISCONNECTED);

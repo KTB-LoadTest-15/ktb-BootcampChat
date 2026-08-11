@@ -136,4 +136,31 @@ describe('api client', () => {
       },
     });
   });
+
+  it('can disable automatic retries for background polling requests', async () => {
+    const client = createApiClient({
+      baseURL: 'http://api.test',
+      getSession: () => null,
+    });
+    let attempts = 0;
+
+    client.defaults.adapter = async (config) => {
+      attempts++;
+      const error = new Error('Service unavailable');
+      error.config = config;
+      error.response = {
+        config,
+        data: {},
+        headers: {},
+        status: 503,
+        statusText: 'Service unavailable',
+      };
+      throw error;
+    };
+
+    await expect(
+      client.get('/api/rooms', { maxRetries: 0 })
+    ).rejects.toMatchObject({ status: 503 });
+    expect(attempts).toBe(1);
+  });
 });

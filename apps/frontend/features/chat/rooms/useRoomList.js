@@ -7,8 +7,6 @@ export const useRoomList = ({
   router,
   connectionStatus,
   setConnectionStatus,
-  isRetrying,
-  attemptConnection,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);
@@ -17,14 +15,15 @@ export const useRoomList = ({
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [joiningRoom, setJoiningRoom] = useState(false);
 
-  const isLoadingRef = useRef(false);
+  const pendingRequestRef = useRef(null);
+  const lastSuccessfulFetchAtRef = useRef(0);
 
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
     let errorType = 'danger';
-    let showRetry = !isRetrying;
+    let showRetry = true;
 
-    if (error.message === 'AUTH_EXPIRED') {
+    if (error.code === 'AUTH_EXPIRED' || error.message === 'AUTH_EXPIRED') {
       errorMessage = '인증이 만료되었습니다. 다시 로그인해주세요.';
       errorType = 'danger';
       showRetry = false;
@@ -40,7 +39,7 @@ export const useRoomList = ({
       return;
     }
 
-    if (error.message === 'SERVER_UNREACHABLE') {
+    if (error.isNetworkError || error.message === 'SERVER_UNREACHABLE') {
       errorMessage = '서버와 연결할 수 없습니다. 다시 시도해주세요.';
       errorType = 'warning';
       showRetry = true;
@@ -52,30 +51,50 @@ export const useRoomList = ({
       type: errorType,
       showRetry,
     });
+  }, [setConnectionStatus]);
 
-    setConnectionStatus(CONNECTION_STATUS.ERROR);
-  }, [isRetrying, setConnectionStatus]);
-
-  const loadRooms = useCallback(async () => {
-    await attemptConnection();
-
-    const response = await axiosInstance.get('/api/rooms');
-
-    if (!response?.data?.data) {
-      throw new Error('INVALID_RESPONSE');
+  const loadRooms = useCallback(({ staleAfterMs = 0, maxRetries } = {}) => {
+    if (pendingRequestRef.current) {
+      return pendingRequestRef.current;
     }
 
-    setRooms(response.data.data);
-  }, [attemptConnection]);
+    if (
+      staleAfterMs > 0 &&
+      Date.now() - lastSuccessfulFetchAtRef.current < staleAfterMs
+    ) {
+      return Promise.resolve({ skipped: true });
+    }
+
+    const request = (
+      maxRetries === undefined
+        ? axiosInstance.get('/api/rooms')
+        : axiosInstance.get('/api/rooms', { maxRetries })
+    )
+      .then((response) => {
+        if (!response?.data?.data) {
+          throw new Error('INVALID_RESPONSE');
+        }
+
+        setRooms(response.data.data);
+        lastSuccessfulFetchAtRef.current = Date.now();
+        return { skipped: false };
+      })
+      .finally(() => {
+        if (pendingRequestRef.current === request) {
+          pendingRequestRef.current = null;
+        }
+      });
+
+    pendingRequestRef.current = request;
+    return request;
+  }, []);
 
   const fetchRooms = useCallback(async () => {
-    if (!currentUser?.token || isLoadingRef.current) {
-      return;
+    if (!currentUser?.token) {
+      return false;
     }
 
     try {
-      isLoadingRef.current = true;
-
       setLoading(true);
       setError(null);
 
@@ -84,11 +103,13 @@ export const useRoomList = ({
       if (isInitialLoad) {
         setIsInitialLoad(false);
       }
+
+      return true;
     } catch (error) {
       handleFetchError(error);
+      return false;
     } finally {
       setLoading(false);
-      isLoadingRef.current = false;
     }
   }, [currentUser, isInitialLoad, loadRooms, handleFetchError]);
 
@@ -96,16 +117,21 @@ export const useRoomList = ({
    * 이미 그려진 목록을 유지한 채 다시 조회한다.
    * 자동 갱신(silent)은 실패해도 화면을 흔들지 않고 다음 주기를 기다린다.
    */
-  const refreshRooms = useCallback(async ({ silent = false } = {}) => {
-    if (!currentUser?.token || isLoadingRef.current) {
+  const refreshRooms = useCallback(async ({
+    silent = false,
+    staleAfterMs = 0,
+    maxRetries,
+  } = {}) => {
+    if (!currentUser?.token) {
       return false;
     }
 
     try {
-      isLoadingRef.current = true;
-      setRefreshing(true);
+      if (!silent) {
+        setRefreshing(true);
+      }
 
-      await loadRooms();
+      await loadRooms({ staleAfterMs, maxRetries });
       setError(null);
 
       return true;
@@ -121,8 +147,9 @@ export const useRoomList = ({
 
       return false;
     } finally {
-      setRefreshing(false);
-      isLoadingRef.current = false;
+      if (!silent) {
+        setRefreshing(false);
+      }
     }
   }, [currentUser, loadRooms]);
 
