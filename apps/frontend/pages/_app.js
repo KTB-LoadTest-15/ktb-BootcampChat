@@ -4,6 +4,7 @@ import { ThemeProvider } from '@vapor-ui/core';
 import '@vapor-ui/core/styles.css';
 import '../styles/globals.css';
 import ChatHeader from '@/components/ChatHeader';
+import ClientLogBridge from '@/components/ClientLogBridge';
 import ToastContainer from '@/components/Toast';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SocketProvider } from '@/lib/socket/SocketProvider';
@@ -29,6 +30,7 @@ function MyApp({ Component, pageProps }) {
     <ThemeProvider defaultTheme="dark">
       <AuthProvider>
         <AuthenticatedSocketProvider>
+          <ClientLogBridge />
           {showHeader && <ChatHeader />}
           <Component {...pageProps} />
           <ToastContainer />

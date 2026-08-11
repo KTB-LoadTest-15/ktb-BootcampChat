@@ -2,6 +2,7 @@
 
 import { ThemeProvider } from '@vapor-ui/core';
 import { useRouter } from 'next/navigation';
+import ClientLogBridge from '@/components/ClientLogBridge';
 import ToastContainer from '@/components/Toast';
 import { AuthProviderWithRouter, useAuth } from '@/contexts/AuthContext';
 import { SocketProvider } from '@/lib/socket/SocketProvider';
@@ -23,6 +24,7 @@ export default function AppProviders({ children }) {
     <ThemeProvider defaultTheme="dark">
       <AuthProviderWithRouter router={router}>
         <AuthenticatedSocketProvider>
+          <ClientLogBridge />
           {children}
           <ToastContainer />
         </AuthenticatedSocketProvider>
