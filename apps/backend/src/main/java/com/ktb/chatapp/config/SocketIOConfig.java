@@ -142,11 +142,19 @@ public class SocketIOConfig {
         return new SpringAnnotationScanner(socketIOServer);
     }
     
-    // 인메모리 저장소, 단일 노드 환경에서만 사용
+    // 인메모리 저장소(기본), 단일 노드 환경에서만 사용
     @Bean
-    @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
-    public ChatDataStore chatDataStore() {
+    @ConditionalOnProperty(name = "socketio.store", havingValue = "memory", matchIfMissing = true)
+    public ChatDataStore localChatDataStore() {
         return new LocalChatDataStore();
+    }
+
+    // Redis 백업 저장소(socketio.store=redisson) — ConnectedUsers/UserRooms를 클러스터 간 공유.
+    @Bean
+    @ConditionalOnProperty(name = "socketio.store", havingValue = "redisson")
+    public ChatDataStore redisChatDataStore(
+            org.springframework.data.redis.core.StringRedisTemplate redisTemplate) {
+        return new com.ktb.chatapp.websocket.socketio.RedisChatDataStore(redisTemplate);
     }
 
     /**

@@ -10,9 +10,9 @@
 | 상태/기능 | 위치 | 크로스노드 | 심각도 |
 |---|---|---|---|
 | 모든 `getRoomOperations(...).sendEvent()` 브로드캐스트 | Socket.IO `MemoryStoreFactory` | ✅ 해결(`socketio.store=redisson`, D7) | ~~🔴~~ 완료 |
-| `ConnectedUsers` (userId→SocketUser) | `LocalChatDataStore` 힙 맵 | ❌ | 🟠 High |
-| `UserRooms` (userId→Set<roomId>) | `LocalChatDataStore` 힙 맵 | ❌ | 🟠 High |
-| 중복 로그인 감지/종료 | `ConnectedUsers`+`getClient` | ❌ (코드 TODO 명시) | 🟠 High |
+| `ConnectedUsers` (userId→SocketUser) | `RedisChatDataStore`(redisson 시) | ✅ 해결 (D8) | ~~🟠~~ 완료 |
+| `UserRooms` (userId→Set<roomId>) | `RedisChatDataStore`(redisson 시) | ✅ 해결 (D8) | ~~🟠~~ 완료 |
+| 중복 로그인 감지/종료 | 공유 ConnectedUsers + `socket:{id}` 룸 | ✅ 해결 (D8) | ~~🟠~~ 완료 |
 | `RedisReadCursorStore.advance` | Redis(공유)지만 비원자 | ⚠️ lost update | 🟡 Medium |
 | `ReadReceiptCoalescer.pendingByRoom` | 힙 `ConcurrentHashMap` | ❌ 로컬 fan-out | 🟡 Medium |
 | `socketio.concurrent.users` 게이지 | `ConnectedUsers.size()` | ⚠️ 노드별 집계 | ℹ️ 관측 |
@@ -66,8 +66,12 @@ netty-socketio 2.0.13은 `RedissonStoreFactory`를 제공하고 **redisson 4.6.1
 1. ✅ **`MemoryStoreFactory` → `RedissonStoreFactory`** (`SocketIOConfig.java`). **완료** — `socketio.store=redisson`
    플래그로 택일(기본 memory). `getRoomOperations().sendEvent()`가 **클러스터 전역 pub/sub fan-out** →
    ①·⑤ 해결. 2노드 A/B로 크로스노드 전달 검증(`docs/perf/D7-socketio-redisson-crossnode.md`).
-2. **`LocalChatDataStore` → Redis 백업 ChatDataStore** → `ConnectedUsers`/`UserRooms` 공유 → ②·③ 해결.
-   (②는 추가로 `notifyDuplicateLogin`을 `user:{userId}` 룸 emit으로 변경 필요 — 이제 redisson으로 타 노드 전달됨.)
-3. **`RedisReadCursorStore.advance` → Lua CAS** → ④ 해결.
+2. ✅ **`LocalChatDataStore` → `RedisChatDataStore`** + **중복 로그인 `socket:{id}` 룸 타깃**. **완료** (D8) —
+   `socketio.store=redisson` 시 `ConnectedUsers`/`UserRooms` 공유, `notifyDuplicateLogin`이 room-ops로
+   크로스노드 전달. 2노드 A/B 검증(`docs/perf/D8-...`).
+3. **`RedisReadCursorStore.advance` → Lua CAS** → ④ 해결. (남음)
 
-우선순위: ~~①(완료)~~ → ②(중복로그인/멤버십) → ③ → ④.
+우선순위: ~~①②③(완료)~~ → ④(읽음 커서 Lua CAS).
+
+> `socketio.store=redisson` 하나로 ①②③이 함께 켜진다(RedissonStoreFactory + RedisChatDataStore).
+> 기본 memory는 단일노드 동작 무변경.
