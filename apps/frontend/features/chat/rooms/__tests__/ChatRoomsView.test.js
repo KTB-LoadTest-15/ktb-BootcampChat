@@ -5,11 +5,13 @@ import ChatRoomsView, {
   ROOM_LIST_REFRESH_INTERVAL,
   ROOM_LIST_STALE_AFTER_MS,
 } from '../ChatRoomsView';
-import { CONNECTION_STATUS } from '../useServerConnection';
+import { API_STATUS } from '../useServerConnection';
+import { CONNECTION_STATUS } from '../useRoomsSocket';
 import { useRoomsSocket } from '../useRoomsSocket';
 
 const mocks = vi.hoisted(() => ({
   connectionStatus: 'checking',
+  apiStatus: 'checking',
   error: null,
   fetchRooms: vi.fn(() => Promise.resolve()),
   refreshRooms: vi.fn(() => Promise.resolve(true)),
@@ -30,8 +32,8 @@ vi.mock('../useServerConnection', async () => {
   return {
     ...actual,
     useServerConnection: () => ({
-      connectionStatus: mocks.connectionStatus,
-      setConnectionStatus: vi.fn(),
+      apiStatus: mocks.apiStatus,
+      setApiStatus: vi.fn(),
       attemptConnection: vi.fn(() => Promise.resolve(true)),
     }),
   };
@@ -51,14 +53,19 @@ vi.mock('../useRoomList', () => ({
   }),
 }));
 
-vi.mock('../useRoomsSocket', () => ({
-  useRoomsSocket: vi.fn(),
-}));
+vi.mock('../useRoomsSocket', async () => {
+  const actual = await vi.importActual('../useRoomsSocket');
+  return {
+    ...actual,
+    useRoomsSocket: vi.fn(),
+  };
+});
 
 describe('ChatRoomsView', () => {
   beforeEach(() => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     mocks.connectionStatus = CONNECTION_STATUS.CHECKING;
+    mocks.apiStatus = API_STATUS.CHECKING;
     mocks.error = null;
     mocks.fetchRooms.mockClear();
     mocks.refreshRooms.mockReset().mockResolvedValue(true);
@@ -86,7 +93,7 @@ describe('ChatRoomsView', () => {
   });
 
   it('refreshes the room list on an interval while connected', async () => {
-    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.apiStatus = API_STATUS.HEALTHY;
     vi.useFakeTimers();
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
@@ -101,7 +108,7 @@ describe('ChatRoomsView', () => {
   });
 
   it('does not auto refresh while the server connection is not established', async () => {
-    mocks.connectionStatus = CONNECTION_STATUS.DISCONNECTED;
+    mocks.apiStatus = API_STATUS.ERROR;
     vi.useFakeTimers();
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
@@ -112,7 +119,7 @@ describe('ChatRoomsView', () => {
   });
 
   it('catches up as soon as the tab becomes visible again', async () => {
-    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.apiStatus = API_STATUS.HEALTHY;
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
@@ -130,7 +137,7 @@ describe('ChatRoomsView', () => {
   });
 
   it('backs off the next poll after a failed background refresh', async () => {
-    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.apiStatus = API_STATUS.HEALTHY;
     mocks.refreshRooms
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true);
@@ -149,7 +156,7 @@ describe('ChatRoomsView', () => {
   });
 
   it('forces one room list sync when the socket reconnects', async () => {
-    mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.apiStatus = API_STATUS.HEALTHY;
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
@@ -168,6 +175,7 @@ describe('ChatRoomsView', () => {
 
   it('refreshes the list when the refresh button is clicked', async () => {
     mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
+    mocks.apiStatus = API_STATUS.HEALTHY;
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
@@ -179,6 +187,7 @@ describe('ChatRoomsView', () => {
 
   it('offers reconnect instead of refresh while an error is shown', async () => {
     mocks.connectionStatus = CONNECTION_STATUS.ERROR;
+    mocks.apiStatus = API_STATUS.ERROR;
     mocks.error = { title: '연결 오류', message: '서버와 연결할 수 없습니다.', type: 'danger' };
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);

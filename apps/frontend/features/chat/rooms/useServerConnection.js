@@ -2,24 +2,26 @@ import { useState, useCallback } from 'react';
 import axiosInstance from '@/services/axios';
 import { HEALTH_TIMEOUT_MS } from '@/lib/api/client';
 
-export const CONNECTION_STATUS = {
+export const API_STATUS = {
   CHECKING: 'checking',
-  CONNECTING: 'connecting',
-  CONNECTED: 'connected',
-  DISCONNECTED: 'disconnected',
+  HEALTHY: 'healthy',
+  UNHEALTHY: 'unhealthy',
   ERROR: 'error',
 };
 
+// Transitional alias for older tests/usages that still import CONNECTION_STATUS.
+export const CONNECTION_STATUS = API_STATUS;
+
 export const useServerConnection = () => {
-  const [connectionStatus, setConnectionStatus] = useState(CONNECTION_STATUS.CHECKING);
+  const [apiStatus, setApiStatus] = useState(API_STATUS.CHECKING);
 
   const attemptConnection = useCallback(async () => {
-    if (connectionStatus === CONNECTION_STATUS.CONNECTED) {
+    if (apiStatus === API_STATUS.HEALTHY) {
       return true;
     }
 
     try {
-      setConnectionStatus(CONNECTION_STATUS.CONNECTING);
+      setApiStatus(API_STATUS.CHECKING);
 
       const response = await axiosInstance.get('/api/health', {
         timeout: HEALTH_TIMEOUT_MS,
@@ -27,27 +29,33 @@ export const useServerConnection = () => {
       });
 
       if (response?.status !== 200 || response?.data?.status !== 'ok') {
-        throw new Error('SERVER_UNREACHABLE');
+        setApiStatus(API_STATUS.UNHEALTHY);
+        throw new Error('SERVER_UNHEALTHY');
       }
 
-      setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+      setApiStatus(API_STATUS.HEALTHY);
       return true;
     } catch (error) {
-      setConnectionStatus(CONNECTION_STATUS.ERROR);
-
       if (error.code === 'AUTH_EXPIRED' || error.message === 'AUTH_EXPIRED') {
+        setApiStatus(API_STATUS.ERROR);
         throw error;
       }
+
+      if (error.message === 'SERVER_UNHEALTHY') {
+        throw error;
+      }
+
+      setApiStatus(API_STATUS.ERROR);
 
       const connectionError = new Error('SERVER_UNREACHABLE');
       connectionError.originalError = error;
       throw connectionError;
     }
-  }, [connectionStatus]);
+  }, [apiStatus]);
 
   return {
-    connectionStatus,
-    setConnectionStatus,
+    apiStatus,
+    setApiStatus,
     attemptConnection,
   };
 };

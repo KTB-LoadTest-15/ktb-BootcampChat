@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
-import { CONNECTION_STATUS } from './useServerConnection';
+import { API_STATUS } from './useServerConnection';
+import { CONNECTION_STATUS } from './useRoomsSocket';
 
 export const ROOM_JOIN_METRIC_PREFIX = '[room-join-metric]';
 const ROOM_JOIN_NAVIGATION_TIMEOUT_MS = 5000;
@@ -73,8 +74,9 @@ const observeNavigation = ({ traceId, roomId, startedAt }) => {
 export const useRoomList = ({
   currentUser,
   router,
+  apiStatus,
+  setApiStatus,
   connectionStatus,
-  setConnectionStatus,
   attemptConnection,
 }) => {
   const [rooms, setRooms] = useState([]);
@@ -106,14 +108,23 @@ export const useRoomList = ({
         showRetry,
       });
 
-      setConnectionStatus(CONNECTION_STATUS.ERROR);
+      setApiStatus(API_STATUS.ERROR);
       return;
     }
 
-    if (error.isNetworkError || error.message === 'SERVER_UNREACHABLE') {
+    if (
+      error.isNetworkError ||
+      error.message === 'SERVER_UNREACHABLE' ||
+      error.message === 'SERVER_UNHEALTHY'
+    ) {
       errorMessage = '서버와 연결할 수 없습니다. 다시 시도해주세요.';
       errorType = 'warning';
       showRetry = true;
+      setApiStatus(
+        error.message === 'SERVER_UNHEALTHY'
+          ? API_STATUS.UNHEALTHY
+          : API_STATUS.ERROR
+      );
     }
 
     setError({
@@ -122,7 +133,7 @@ export const useRoomList = ({
       type: errorType,
       showRetry,
     });
-  }, [setConnectionStatus]);
+  }, [setApiStatus]);
 
   const loadRooms = useCallback(({
     staleAfterMs = 0,

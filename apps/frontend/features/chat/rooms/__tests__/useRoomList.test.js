@@ -2,7 +2,8 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axiosInstance from '@/services/axios';
 import { useRoomList } from '../useRoomList';
-import { CONNECTION_STATUS } from '../useServerConnection';
+import { API_STATUS } from '../useServerConnection';
+import { CONNECTION_STATUS } from '../useRoomsSocket';
 
 vi.mock('@/services/axios', () => ({
   default: {
@@ -22,8 +23,9 @@ const renderRoomList = ({
     useRoomList({
       currentUser: { token: 'token-1' },
       router,
+      apiStatus: API_STATUS.HEALTHY,
+      setApiStatus: vi.fn(),
       connectionStatus,
-      setConnectionStatus: vi.fn(),
       attemptConnection,
     })
   );

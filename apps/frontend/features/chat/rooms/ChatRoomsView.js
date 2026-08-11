@@ -1,22 +1,30 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ErrorCircleIcon, NetworkIcon, RefreshOutlineIcon } from '@vapor-ui/icons';
 import { Button, Text, Badge, Callout, Box, VStack, HStack, Spinner } from '@vapor-ui/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoomsSocket } from './useRoomsSocket';
 import {
   useServerConnection,
-  CONNECTION_STATUS,
+  API_STATUS,
 } from './useServerConnection';
+import { CONNECTION_STATUS } from './useRoomsSocket';
 import { useRoomList } from './useRoomList';
 import RoomsTable from './RoomsTable';
 import ConnectionErrorBanner from '@/components/ConnectionErrorBanner';
 
-const STATUS_CONFIG = {
-  [CONNECTION_STATUS.CHECKING]: { label: "연결 확인 중...", color: "warning" },
-  [CONNECTION_STATUS.CONNECTING]: { label: "연결 중...", color: "warning" },
-  [CONNECTION_STATUS.CONNECTED]: { label: "연결됨", color: "success" },
-  [CONNECTION_STATUS.DISCONNECTED]: { label: "연결 끊김", color: "danger" },
-  [CONNECTION_STATUS.ERROR]: { label: "연결 오류", color: "danger" },
+const API_STATUS_CONFIG = {
+  [API_STATUS.CHECKING]: { label: 'API 확인 중...', color: 'warning' },
+  [API_STATUS.HEALTHY]: { label: 'API 정상', color: 'success' },
+  [API_STATUS.UNHEALTHY]: { label: 'API 비정상', color: 'danger' },
+  [API_STATUS.ERROR]: { label: 'API 오류', color: 'danger' },
+};
+
+const SOCKET_STATUS_CONFIG = {
+  [CONNECTION_STATUS.CHECKING]: { label: '소켓 확인 중...', color: 'warning' },
+  [CONNECTION_STATUS.CONNECTING]: { label: '소켓 연결 중', color: 'warning' },
+  [CONNECTION_STATUS.CONNECTED]: { label: '소켓 연결됨', color: 'success' },
+  [CONNECTION_STATUS.DISCONNECTED]: { label: '소켓 연결 끊김', color: 'danger' },
+  [CONNECTION_STATUS.ERROR]: { label: '소켓 오류', color: 'danger' },
 };
 
 export const ROOM_LIST_REFRESH_INTERVAL = 2 * 60 * 1000;
@@ -43,10 +51,11 @@ const LoadingIndicator = ({ text }) => (
 export default function ChatRoomsView({ router }) {
   const { user: currentUser } = useAuth();
   const currentUserKey = currentUser?.id || currentUser?._id || currentUser?.email || currentUser?.token;
+  const [connectionStatus, setConnectionStatus] = useState(CONNECTION_STATUS.CHECKING);
 
   const {
-    connectionStatus,
-    setConnectionStatus,
+    apiStatus,
+    setApiStatus,
     attemptConnection,
   } = useServerConnection();
 
@@ -66,8 +75,9 @@ export default function ChatRoomsView({ router }) {
   } = useRoomList({
     currentUser,
     router,
+    apiStatus,
+    setApiStatus,
     connectionStatus,
-    setConnectionStatus,
     attemptConnection,
   });
 
@@ -101,7 +111,7 @@ export default function ChatRoomsView({ router }) {
   // 활성도 지표는 소켓 이벤트만으로 만료를 알 수 없어 주기적으로 다시 조회한다.
   // 보이지 않는 탭에서는 갱신을 멈추고, 실패 시 다음 조회를 지수 백오프한다.
   useEffect(() => {
-    if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CONNECTED) return;
+    if (!currentUserKey || apiStatus !== API_STATUS.HEALTHY) return;
 
     let cancelled = false;
     let refreshTimer = null;
@@ -156,7 +166,7 @@ export default function ChatRoomsView({ router }) {
       }
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [currentUserKey, connectionStatus]);
+  }, [currentUserKey, apiStatus]);
 
   useRoomsSocket({
     currentUser,
@@ -164,6 +174,12 @@ export default function ChatRoomsView({ router }) {
     setRooms,
     onReconnect: refreshAfterReconnect,
   });
+
+  const showConnectionBanner =
+    !loading &&
+    rooms.length === 0 &&
+    apiStatus !== API_STATUS.HEALTHY &&
+    connectionStatus !== CONNECTION_STATUS.CONNECTED;
 
   return (
     <Box
@@ -192,10 +208,13 @@ export default function ChatRoomsView({ router }) {
           >
             <Text typography="heading3">채팅방 목록</Text>
             <HStack $css={{ gap: '$200' }}>
-              <Badge colorPalette={STATUS_CONFIG[connectionStatus]?.color || 'danger'}>
-                {STATUS_CONFIG[connectionStatus].label}
+              <Badge colorPalette={API_STATUS_CONFIG[apiStatus]?.color || 'danger'}>
+                {API_STATUS_CONFIG[apiStatus]?.label || 'API 오류'}
               </Badge>
-              {error || connectionStatus === CONNECTION_STATUS.ERROR ? (
+              <Badge colorPalette={SOCKET_STATUS_CONFIG[connectionStatus]?.color || 'danger'}>
+                {SOCKET_STATUS_CONFIG[connectionStatus]?.label || '소켓 오류'}
+              </Badge>
+              {error || apiStatus === API_STATUS.ERROR ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -228,7 +247,7 @@ export default function ChatRoomsView({ router }) {
           >
             <HStack $css={{ gap: '$200', alignItems: 'flex-start' }}>
               <Callout.Icon>
-                {connectionStatus === CONNECTION_STATUS.ERROR ? (
+                {apiStatus === API_STATUS.ERROR ? (
                   <NetworkIcon size={18} />
                 ) : (
                   <ErrorCircleIcon size={18} />
@@ -251,7 +270,7 @@ export default function ChatRoomsView({ router }) {
           </Callout.Root>
         )}
 
-        {connectionStatus === CONNECTION_STATUS.ERROR ? (
+        {showConnectionBanner ? (
           <ConnectionErrorBanner message="채팅 서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요." />
         ) : loading ? (
           <Box $css={{ padding: '$400' }}>

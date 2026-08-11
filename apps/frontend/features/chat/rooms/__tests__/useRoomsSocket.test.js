@@ -1,7 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import socketClient from '@/lib/socket/socketClient';
-import { useRoomsSocket } from '../useRoomsSocket';
+import { CONNECTION_STATUS, useRoomsSocket } from '../useRoomsSocket';
 
 vi.mock('@/lib/socket/socketClient', () => ({
   default: {
@@ -56,7 +56,8 @@ describe('useRoomsSocket', () => {
     });
 
     expect(socket.emit).toHaveBeenCalledTimes(1);
-    expect(setConnectionStatus).toHaveBeenCalledWith('connected');
+    expect(setConnectionStatus).toHaveBeenNthCalledWith(1, CONNECTION_STATUS.CONNECTING);
+    expect(setConnectionStatus).toHaveBeenLastCalledWith(CONNECTION_STATUS.CONNECTED);
 
     handlerFor(socket, 'connect')();
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { LockIcon, GroupIcon } from '@vapor-ui/icons';
 import { Button, Text, VStack, HStack } from '@vapor-ui/core';
 import * as Table from '@/components/Table';
-import { CONNECTION_STATUS } from './useServerConnection';
+import { CONNECTION_STATUS } from './useRoomsSocket';
 
 const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
   if (!rooms || rooms.length === 0) return null;

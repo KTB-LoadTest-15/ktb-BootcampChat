@@ -1,7 +1,9 @@
 import { useRef, useEffect } from 'react';
 import socketClient from '@/lib/socket/socketClient';
 
-const CONNECTION_STATUS = {
+export const CONNECTION_STATUS = {
+  CHECKING: 'checking',
+  CONNECTING: 'connecting',
   CONNECTED: 'connected',
   DISCONNECTED: 'disconnected',
   ERROR: 'error',
@@ -28,6 +30,8 @@ export const useRoomsSocket = ({
     let activeHandlers = null;
 
     const connectSocket = async () => {
+      setConnectionStatus(CONNECTION_STATUS.CONNECTING);
+
       try {
         const socket = await socketClient.connect({
           auth: {
@@ -92,9 +96,11 @@ export const useRoomsSocket = ({
           socket.on(event, handler);
         });
 
-        // connect()는 최초 connect 이벤트가 끝난 뒤 resolve되므로 즉시 구독한다.
-        // 이후 재연결에서는 위 connect 핸들러가 다시 구독한다.
-        setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+        // connect()가 resolve된 시점의 소켓은 이미 handshake를 마친 상태다.
+        // 이후 상태 전이는 connect/disconnect/error 이벤트로만 갱신한다.
+        if (socket.connected) {
+          setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+        }
         socket.emit('subscribeRoomList');
       } catch (error) {
         if (!isActive) return;
