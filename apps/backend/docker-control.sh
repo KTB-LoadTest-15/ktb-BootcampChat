@@ -34,6 +34,7 @@ HEALTH_CHECK_TIMEOUT="${HEALTH_CHECK_TIMEOUT:-60}"
 HEALTH_CHECK_INTERVAL="${HEALTH_CHECK_INTERVAL:-2}"
 STATE_FILE="${STATE_FILE:-$HOME/ktb-chat-backend/.current-image}"
 PREVIOUS_STATE_FILE="${PREVIOUS_STATE_FILE:-$HOME/ktb-chat-backend/.previous-image}"
+MIN_FREE_KB="${MIN_FREE_KB:-1048576}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -45,6 +46,141 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+current_image_ref() {
+    if container_exists "$CONTAINER_NAME"; then
+        docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME" 2>/dev/null || true
+    fi
+}
+
+previous_image_ref() {
+    if container_exists "$PREV_CONTAINER_NAME"; then
+        docker inspect -f '{{.Config.Image}}' "$PREV_CONTAINER_NAME" 2>/dev/null || true
+    elif [ -f "$PREVIOUS_STATE_FILE" ]; then
+        cat "$PREVIOUS_STATE_FILE"
+    fi
+}
+
+free_space_kb() {
+    df -Pk "${DOCKER_ROOT_CHECK_PATH:-/var/lib/docker}" 2>/dev/null | awk 'NR==2 {print $4}'
+}
+
+log_disk_usage() {
+    local free_kb
+    free_kb="$(free_space_kb)"
+    if [ -n "${free_kb:-}" ]; then
+        log_info "Free space near Docker root: $((free_kb / 1024)) MB"
+    fi
+    docker system df || true
+}
+
+remove_stale_app_images() {
+    local target_image="${1:-}"
+    local keep_refs
+    local current_ref
+    local previous_ref
+    local image_id
+    local refs
+    local ref
+
+    keep_refs=" $target_image "
+    current_ref="$(current_image_ref)"
+    previous_ref="$(previous_image_ref)"
+
+    if [ -n "${current_ref:-}" ]; then
+        keep_refs="${keep_refs}${current_ref} "
+    fi
+    if [ -n "${previous_ref:-}" ]; then
+        keep_refs="${keep_refs}${previous_ref} "
+    fi
+
+    while IFS= read -r image_id; do
+        [ -n "$image_id" ] || continue
+        refs="$(docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null || true)"
+        [ -n "$refs" ] || continue
+
+        for ref in $refs; do
+            case "$ref" in
+                ghcr.io/ktb-loadtest-15/ktb-bootcampchat-backend:*)
+                    if [[ "$keep_refs" == *" $ref "* ]]; then
+                        continue
+                    fi
+                    log_info "Removing stale image $ref"
+                    docker image rm -f "$ref" >/dev/null || true
+                    break
+                    ;;
+            esac
+        done
+    done < <(docker images -q --no-trunc | sort -u)
+}
+
+remove_all_but_one_existing_app_image() {
+    local keep_ref=""
+    local current_ref
+    local previous_ref
+    local image_id
+    local refs
+    local ref
+
+    current_ref="$(current_image_ref)"
+    previous_ref="$(previous_image_ref)"
+
+    if [ -n "${current_ref:-}" ]; then
+        keep_ref="$current_ref"
+    elif [ -n "${previous_ref:-}" ]; then
+        keep_ref="$previous_ref"
+    fi
+
+    if [ -n "$keep_ref" ]; then
+        log_info "Keeping one existing backend image before pull: $keep_ref"
+    else
+        log_info "No active backend image to preserve before pull"
+    fi
+
+    while IFS= read -r image_id; do
+        [ -n "$image_id" ] || continue
+        refs="$(docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null || true)"
+        [ -n "$refs" ] || continue
+
+        for ref in $refs; do
+            case "$ref" in
+                ghcr.io/ktb-loadtest-15/ktb-bootcampchat-backend:*)
+                    if [ -n "$keep_ref" ] && [ "$ref" = "$keep_ref" ]; then
+                        continue
+                    fi
+                    log_info "Removing existing image before pull: $ref"
+                    docker image rm -f "$ref" >/dev/null || true
+                    break
+                    ;;
+            esac
+        done
+    done < <(docker images -q --no-trunc | sort -u)
+}
+
+ensure_disk_headroom() {
+    local target_image="${1:-}"
+    local before_kb
+    local after_kb
+
+    before_kb="$(free_space_kb)"
+    if [ -n "${before_kb:-}" ] && [ "$before_kb" -ge "$MIN_FREE_KB" ]; then
+        return 0
+    fi
+
+    log_warn "Low disk space detected before deploy. Starting targeted Docker cleanup..."
+    log_disk_usage
+    docker container prune -f >/dev/null || true
+    docker image prune -f >/dev/null || true
+    remove_all_but_one_existing_app_image
+    remove_stale_app_images "$target_image"
+    after_kb="$(free_space_kb)"
+    log_disk_usage
+
+    if [ -z "${after_kb:-}" ] || [ "$after_kb" -lt "$MIN_FREE_KB" ]; then
+        log_error "Insufficient free space for deploy after cleanup. Required: $((MIN_FREE_KB / 1024)) MB, available: $(( ${after_kb:-0} / 1024 )) MB"
+        exit 1
+    fi
+}
 
 check_env_file() {
     if [ ! -f "$ENV_FILE" ]; then
@@ -113,6 +249,8 @@ deploy() {
         exit 1
     fi
     check_env_file
+    remove_all_but_one_existing_app_image
+    ensure_disk_headroom "$image_ref"
 
     log_info "Pulling $image_ref..."
     docker pull "$image_ref"
@@ -143,6 +281,7 @@ deploy() {
         else
             rm -f "$PREVIOUS_STATE_FILE"
         fi
+        remove_stale_app_images "$image_ref"
         log_success "Deploy complete: $image_ref"
         return 0
     fi
