@@ -2,6 +2,8 @@ package com.ktb.chatapp.controller;
 
 import com.ktb.chatapp.dto.StandardResponse;
 import com.ktb.chatapp.dto.ProfileImageResponse;
+import com.ktb.chatapp.dto.ProfileImageConfirmRequest;
+import com.ktb.chatapp.service.PresignedProfileImageService;
 import com.ktb.chatapp.dto.UpdateProfileRequest;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.service.UserService;
@@ -16,6 +18,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.security.Principal;
+import java.util.Map;
 
 @Tag(name = "사용자 (Users)", description = "사용자 프로필 관리 API - 프로필 조회, 수정, 이미지 업로드, 회원 탈퇴")
 @RequiredArgsConstructor
@@ -37,6 +44,30 @@ import java.security.Principal;
 public class UserController {
 
     private final UserService userService;
+    private final ObjectProvider<PresignedProfileImageService> presignedProfileImageService;
+
+    @PostMapping(value = "/profile-image", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> confirmProfileImage(
+            @Valid @RequestBody ProfileImageConfirmRequest request,
+            Authentication authentication) {
+        PresignedProfileImageService service = presignedProfileImageService.getIfAvailable();
+        if (service == null) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                    .body(Map.of("success", false, "message", "S3 업로드가 활성화되지 않았습니다."));
+        }
+        return ResponseEntity.ok(service.confirm(
+                request.objectKey(), authenticatedUserId(authentication)));
+    }
+
+    private String authenticatedUserId(Authentication authentication) {
+        if (authentication != null && authentication.getDetails() instanceof Map<?, ?> details) {
+            Object userId = details.get("userId");
+            if (userId instanceof String value && !value.isBlank()) {
+                return value;
+            }
+        }
+        throw new UsernameNotFoundException("인증된 사용자 ID를 찾을 수 없습니다.");
+    }
 
     /**
      * 현재 사용자 프로필 조회
@@ -120,7 +151,7 @@ public class UserController {
         @ApiResponse(responseCode = "500", description = "서버 내부 오류",
             content = @Content(schema = @Schema(implementation = StandardResponse.class)))
     })
-    @PostMapping("/profile-image")
+    @PostMapping(value = "/profile-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> uploadProfileImage(
             Principal principal,
             @RequestParam("profileImage") MultipartFile file) {

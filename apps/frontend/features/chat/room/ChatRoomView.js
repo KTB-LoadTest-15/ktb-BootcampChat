@@ -25,6 +25,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
     messageLoadError,
     retryMessageLoad,
     currentUser,
+    uploading,
     fileInputRef,
     handleMessageSubmit,
     loading,
@@ -183,6 +184,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
       <ChatInput
         onSubmit={handleMessageSubmit}
         fileInputRef={fileInputRef}
+        uploading={uploading}
         disabled={connectionStatus !== 'connected'}
         room={room}
       />
