@@ -142,6 +142,9 @@ jobs:
           MANAGEMENT_HEALTH_SHOW_DETAILS: ${{ vars.MANAGEMENT_HEALTH_SHOW_DETAILS }}
           SWAGGER_ENABLED: ${{ vars.SWAGGER_ENABLED }}
           SOCKETIO_STORE: ${{ vars.SOCKETIO_STORE }}
+          FILE_STORAGE_TYPE: ${{ vars.FILE_STORAGE_TYPE }}
+          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
           env_file="$(mktemp)"
@@ -161,6 +164,9 @@ jobs:
           SOCKETIO_STORE=$SOCKETIO_STORE
           MANAGEMENT_HEALTH_SHOW_DETAILS=$MANAGEMENT_HEALTH_SHOW_DETAILS
           SWAGGER_ENABLED=$SWAGGER_ENABLED
+          FILE_STORAGE_TYPE=$FILE_STORAGE_TYPE
+          AWS_S3_BUCKET=$AWS_S3_BUCKET
+          AWS_REGION=$AWS_REGION
           PORT=5001
           WS_PORT=5002
           EOF

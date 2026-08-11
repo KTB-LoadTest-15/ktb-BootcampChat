@@ -2,8 +2,15 @@
 FROM node:22-alpine AS builder
 WORKDIR /repo
 
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_SOCKET_URL
+ARG FRONTEND_FILE_UPLOAD_MODE
+
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+ENV NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL"
+ENV NEXT_PUBLIC_SOCKET_URL="$NEXT_PUBLIC_SOCKET_URL"
+ENV FRONTEND_FILE_UPLOAD_MODE="$FRONTEND_FILE_UPLOAD_MODE"
 
 # pnpm workspace lockfile을 사용하므로 repository root를 Docker build context로 사용한다.
 RUN corepack enable && corepack prepare pnpm@11.0.3 --activate
