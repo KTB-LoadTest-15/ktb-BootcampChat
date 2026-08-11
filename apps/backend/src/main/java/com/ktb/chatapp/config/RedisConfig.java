@@ -3,20 +3,24 @@ package com.ktb.chatapp.config;
 import io.lettuce.core.ReadFrom;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisSentinelConfiguration;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.util.StringUtils;
 
 /**
- * Redis 연결 팩토리를 직접 정의해 Sentinel(1 Primary + 2 Replica) 고가용성과
- * 읽기/쓰기 분산(ReadFrom)을 제어한다. Spring Boot의 프로퍼티 기반 sentinel 자동설정은
- * sentinel 노드가 비어 있을 때 로컬(단일 노드) 부팅을 깨뜨리므로, 여기서 env 존재 여부로
- * 명시적으로 분기한다({@code app.redis.sentinel.nodes} 있으면 Sentinel, 없으면 standalone).
+ * Redis 연결 팩토리를 Sentinel(1 Primary + 2 Replica) 고가용성 + 읽기/쓰기 분산(ReadFrom)으로 정의한다.
+ *
+ * <p><b>이 빈은 {@code app.redis.sentinel.nodes}가 비어있지 않을 때만 생성된다</b>({@link ConditionalOnExpression}).
+ * sentinel 미설정(로컬/테스트/기존 단일노드)일 때는 이 빈이 백오프하고 Spring Boot 자동설정 팩토리가
+ * 그대로 쓰인다. 자동설정은 {@code spring.data.redis.*}뿐 아니라 Testcontainers {@code @ServiceConnection}이
+ * 만드는 {@code RedisConnectionDetails}(랜덤 매핑 포트)도 존중하므로, 여기서 팩토리를 무조건 덮어쓰면
+ * 통합테스트가 컨테이너 포트를 못 보고 localhost:6379로 붙어 실패한다(그래서 conditional로 격리).
+ * 또한 standalone은 replica가 없어 ReadFrom이 무의미하므로 sentinel일 때만 관여하는 게 맞다.
  *
  * <p><b>읽기/쓰기 분산 주의</b>: 쓰기는 항상 Primary로 가지만, replica read는 비동기 복제라
  * 방금 쓴 값을 replica에서 읽으면 stale일 수 있다(read-your-writes 위반). 이 앱의 세션/멤버십/
@@ -48,12 +52,6 @@ public class RedisConfig {
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
-    @Value("${spring.data.redis.host:localhost}")
-    private String standaloneHost;
-
-    @Value("${spring.data.redis.port:6379}")
-    private int standalonePort;
-
     /**
      * env 값(UPPER_SNAKE, 예: REPLICA_PREFERRED)을 Lettuce {@link ReadFrom} 상수로 매핑한다.
      * 주의: {@code ReadFrom.valueOf(...)}는 필드명이 아니라 camelCase 토큰(replicaPreferred)만 받으므로
@@ -74,43 +72,38 @@ public class RedisConfig {
         };
     }
 
+    /**
+     * Sentinel 노드가 설정된 경우에만 생성되는 팩토리. 비어 있으면 이 빈은 백오프하고
+     * Boot 자동설정(standalone / @ServiceConnection)이 팩토리를 담당한다.
+     */
     @Bean
+    @ConditionalOnExpression("!'${app.redis.sentinel.nodes:}'.isBlank()")
     public LettuceConnectionFactory redisConnectionFactory() {
         ReadFrom readFrom = parseReadFrom(readFromName);
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
                 .readFrom(readFrom)
                 .build();
 
-        if (StringUtils.hasText(sentinelNodes)) {
-            RedisSentinelConfiguration sentinel = new RedisSentinelConfiguration();
-            sentinel.master(sentinelMaster);
-            for (String node : sentinelNodes.split(",")) {
-                String trimmed = node.trim();
-                if (trimmed.isEmpty()) {
-                    continue;
-                }
-                int idx = trimmed.lastIndexOf(':');
-                String host = trimmed.substring(0, idx);
-                int port = Integer.parseInt(trimmed.substring(idx + 1));
-                sentinel.sentinel(host, port);
+        RedisSentinelConfiguration sentinel = new RedisSentinelConfiguration();
+        sentinel.master(sentinelMaster);
+        for (String node : sentinelNodes.split(",")) {
+            String trimmed = node.trim();
+            if (trimmed.isEmpty()) {
+                continue;
             }
-            if (StringUtils.hasText(redisPassword)) {
-                sentinel.setPassword(RedisPassword.of(redisPassword));
-            }
-            if (StringUtils.hasText(sentinelPassword)) {
-                sentinel.setSentinelPassword(RedisPassword.of(sentinelPassword));
-            }
-            log.info("Redis Sentinel mode: master={} sentinels=[{}] readFrom={} (쓰기=Primary, 읽기={})",
-                     sentinelMaster, sentinelNodes, readFrom, readFrom);
-            return new LettuceConnectionFactory(sentinel, clientConfig);
+            int idx = trimmed.lastIndexOf(':');
+            String host = trimmed.substring(0, idx);
+            int port = Integer.parseInt(trimmed.substring(idx + 1));
+            sentinel.sentinel(host, port);
         }
-
-        RedisStandaloneConfiguration standalone = new RedisStandaloneConfiguration(standaloneHost, standalonePort);
         if (StringUtils.hasText(redisPassword)) {
-            standalone.setPassword(RedisPassword.of(redisPassword));
+            sentinel.setPassword(RedisPassword.of(redisPassword));
         }
-        log.info("Redis standalone mode: {}:{} readFrom={} (단일 노드, Sentinel 미설정)",
-                 standaloneHost, standalonePort, readFrom);
-        return new LettuceConnectionFactory(standalone, clientConfig);
+        if (StringUtils.hasText(sentinelPassword)) {
+            sentinel.setSentinelPassword(RedisPassword.of(sentinelPassword));
+        }
+        log.info("Redis Sentinel mode: master={} sentinels=[{}] readFrom={} (쓰기=Primary, 읽기={})",
+                 sentinelMaster, sentinelNodes, readFrom, readFrom);
+        return new LettuceConnectionFactory(sentinel, clientConfig);
     }
 }
