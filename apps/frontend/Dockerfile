@@ -22,6 +22,7 @@ RUN pnpm --dir apps/frontend install --frozen-lockfile
 
 COPY apps/frontend/.env* apps/frontend/
 COPY apps/frontend/jsconfig.json apps/frontend/next.config.js apps/frontend/postcss.config.js apps/frontend/tailwind.config.js apps/frontend/
+COPY apps/frontend/scripts apps/frontend/scripts
 COPY apps/frontend/app apps/frontend/app
 COPY apps/frontend/components apps/frontend/components
 COPY apps/frontend/contexts apps/frontend/contexts
@@ -37,6 +38,7 @@ COPY apps/frontend/utils apps/frontend/utils
 ARG NEXT_PUBLIC_FILE_UPLOAD_MODE=server
 ENV NEXT_PUBLIC_FILE_UPLOAD_MODE=${NEXT_PUBLIC_FILE_UPLOAD_MODE}
 
+RUN node apps/frontend/scripts/validate-public-env.mjs
 RUN pnpm --dir apps/frontend build
 
 # Stage 2: Runner
@@ -51,8 +53,10 @@ RUN addgroup --system --gid 1001 nodejs && \
 # (모노레포 standalone 출력이라 server.js가 apps/frontend/ 아래에 그대로 중첩되어 나온다.
 #  static/public도 server.js와 같은 위치 기준으로 찾으므로 같이 중첩시켜야 한다 - deploy:static 스크립트와 동일)
 COPY --from=builder /repo/apps/frontend/public ./apps/frontend/public
+COPY --from=builder /repo/apps/frontend/.build-public-env.json ./apps/frontend/.build-public-env.json
 COPY --from=builder /repo/apps/frontend/.next/standalone ./
 COPY --from=builder /repo/apps/frontend/.next/static ./apps/frontend/.next/static
+COPY --from=builder /repo/apps/frontend/scripts/start-frontend.mjs ./scripts/start-frontend.mjs
 
 # 파일 권한 설정
 RUN chown -R nextjs:nodejs /app
@@ -65,4 +69,4 @@ ENV PORT=3000
 ENV NODE_ENV=production
 ENV KEEP_ALIVE_TIMEOUT=90000
 
-CMD ["node", "apps/frontend/server.js"]
+CMD ["node", "scripts/start-frontend.mjs"]

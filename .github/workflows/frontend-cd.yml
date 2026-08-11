@@ -43,6 +43,7 @@ jobs:
           BASTION_USER: ${{ secrets.BASTION_USER }}
         run: |
           set -euo pipefail
+          FRONTEND_HOST_LIST="$(printf '%s\n' "${FRONTEND_HOSTS:-}" | xargs)"
 
           if [ -z "${NEXT_PUBLIC_API_URL:-}" ] || [ -z "${NEXT_PUBLIC_SOCKET_URL:-}" ] || [ -z "${NEXT_PUBLIC_FILE_UPLOAD_MODE:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -50,7 +51,7 @@ jobs:
             exit 0
           fi
 
-          if [ -z "${FRONTEND_HOSTS:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ] || [ -z "${BASTION_HOST:-}" ] || [ -z "${BASTION_USER:-}" ]; then
+          if [ -z "$FRONTEND_HOST_LIST" ] || [ -z "${SSH_PRIVATE_KEY:-}" ] || [ -z "${BASTION_HOST:-}" ] || [ -z "${BASTION_USER:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping frontend CD because deploy secrets are not fully configured."
             exit 0
@@ -118,6 +119,7 @@ jobs:
           FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
         run: |
           set -euo pipefail
+          FRONTEND_HOST_LIST="$(printf '%s\n' "$FRONTEND_HOSTS" | xargs)"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -141,10 +143,16 @@ jobs:
             IdentitiesOnly yes
             ProxyJump bastion
             StrictHostKeyChecking yes
+          Host 172.16.* 172.17.* 172.18.* 172.19.* 172.2?.* 172.30.* 172.31.* 192.168.*
+            User ubuntu
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            ProxyJump bastion
+            StrictHostKeyChecking yes
           EOF
           chmod 600 ~/.ssh/config
 
-          for host in $FRONTEND_HOSTS; do
+          for host in $FRONTEND_HOST_LIST; do
             ssh bastion "ssh-keyscan -H '$host'" >> ~/.ssh/known_hosts
           done
 
@@ -154,10 +162,11 @@ jobs:
           FRONTEND_HOSTS: ${{ secrets.FRONTEND_HOSTS }}
         run: |
           set -euo pipefail
+          FRONTEND_HOST_LIST="$(printf '%s\n' "$FRONTEND_HOSTS" | xargs)"
 
           ssh bastion "echo BASTION_OK"
 
-          for host in $FRONTEND_HOSTS; do
+          for host in $FRONTEND_HOST_LIST; do
             echo "Testing $host"
             ssh "$host" "echo FRONTEND_OK && hostname"
           done
@@ -170,13 +179,14 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -euo pipefail
+          FRONTEND_HOST_LIST="$(printf '%s\n' "$FRONTEND_HOSTS" | xargs)"
 
           if [ -z "${GHCR_USERNAME:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
             echo "GHCR credentials not configured. Assuming the package is public."
             exit 0
           fi
 
-          for host in $FRONTEND_HOSTS; do
+          for host in $FRONTEND_HOST_LIST; do
             printf '%s' "$GHCR_TOKEN" | ssh "$host" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           done
 
@@ -187,11 +197,12 @@ jobs:
           IMAGE_REF: ${{ env.FRONTEND_IMAGE }}:${{ needs.build-frontend.outputs.tag }}
         run: |
           set -euo pipefail
+          FRONTEND_HOST_LIST="$(printf '%s\n' "$FRONTEND_HOSTS" | xargs)"
           pids=""
           result_dir="$(mktemp -d)"
           trap 'rm -rf "$result_dir"' EXIT
 
-          for host in $FRONTEND_HOSTS; do
+          for host in $FRONTEND_HOST_LIST; do
             (
               if ssh "$host" "mkdir -p ~/ktb-chat-frontend" &&
                 scp apps/frontend/docker-control.sh "$host:~/ktb-chat-frontend/docker-control.sh" &&
@@ -213,7 +224,7 @@ jobs:
           total=0
           success_hosts=""
           failed_hosts=""
-          for host in $FRONTEND_HOSTS; do
+          for host in $FRONTEND_HOST_LIST; do
             total=$((total + 1))
             if [ -f "$result_dir/$host" ] && [ "$(cat "$result_dir/$host")" = "success" ]; then
               success_hosts="$success_hosts $host"

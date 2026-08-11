@@ -48,6 +48,10 @@ NEXT_PUBLIC_SOCKET_URL=http://localhost:5002
 
 서버환경에서 실행시 Route 53 에 등록한 도메인을 입력하세요. 예: `https://chat.goorm-ktb-[번호].goorm.team`
 
+> 필수: 두 대 이상 운영할 때는 모든 프론트 서버가 **동일한 빌드 산출물**을 써야 합니다.
+> `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SOCKET_URL`는 빌드 시 코드에 인라인되므로 서버마다 다르게
+> 주입하면 안 됩니다. 현재는 빌드 전에 두 값이 없거나 URL 형식이 아니면 즉시 실패합니다.
+
 ### 3. 개발 서버 실행
 
 ```bash
