@@ -201,6 +201,50 @@ cd apps/backend
 4. Tomcat thread `10/20/40` 비교
 5. Mongo connection pool·finite timeout 적정값 검증
 
+## 런타임 설정 비교 방법
+
+측정 때마다 `application.properties`를 수정하지 않도록 Tomcat 설정을 환경변수로 주입할 수 있게 한다. 환경변수를 주지 않으면 기존과 동일한 `10/1/10/50`을 사용하므로 이 변경 자체는 런타임 동작을 바꾸지 않는다.
+
+| 환경변수 | Spring 설정 | 기본값 |
+|---|---|---:|
+| `TOMCAT_THREADS_MAX` | `server.tomcat.threads.max` | 10 |
+| `TOMCAT_THREADS_MIN_SPARE` | `server.tomcat.threads.min-spare` | 1 |
+| `TOMCAT_ACCEPT_COUNT` | `server.tomcat.accept-count` | 10 |
+| `TOMCAT_MAX_CONNECTIONS` | `server.tomcat.max-connections` | 50 |
+
+Tomcat thread 비교 예시:
+
+```bash
+TOMCAT_THREADS_MAX=10 make dev
+TOMCAT_THREADS_MAX=20 make dev
+TOMCAT_THREADS_MAX=40 make dev
+```
+
+각 실행은 동일한 VU·duration·데이터 조건에서 따로 수행하고 p99, 오류율, Tomcat busy thread, CPU를 기록한다. thread 수가 많을수록 좋다고 가정하지 않고, p99 개선이 멈추거나 CPU·context switching이 증가하는 지점 전의 값을 후보로 선정한다.
+
+MongoDB pool과 timeout은 이미 전체 connection string을 받는 `MONGO_URI`로 주입할 수 있으므로 별도 Java 설정 클래스를 추가하지 않는다.
+
+```bash
+MONGO_URI='mongodb://localhost:27017/bootcamp-chat?maxPoolSize=10&minPoolSize=0&waitQueueTimeoutMS=5000&connectTimeoutMS=10000&serverSelectionTimeoutMS=10000&socketTimeoutMS=10000' make dev
+```
+
+위 숫자는 최종 추천값이 아니라 **finite timeout과 pool 비교를 위한 실험 예시**다. 최종값은 pool wait time, timeout 오류율, MongoDB connection 사용량과 API p99를 함께 비교한 뒤 선정한다. 비밀번호가 포함된 실제 URI는 문서·커밋·테스트 결과에 남기지 않는다.
+
+### 30 VU 브라우저 부하 1차 비교
+
+Artillery + Playwright 통합 시나리오를 30 VU로 실행해 기본 10 threads와 thread 증가 설정을 비교했다.
+
+| 항목 | 기본 10 threads | thread 증가 실험 |
+|---|---:|---:|
+| 완료 VU | 20/30 | 20/30 |
+| 실패 VU | 10/30 | 10/30 |
+| `/chat` TTFB 평균 | 232.9ms | 336.5ms |
+| `/chat` TTFB p95 | 1,153.1ms | 788.5ms |
+
+p95는 일부 개선됐지만 평균은 악화됐고, 완료·실패 VU는 변하지 않았다. 실패도 대부분 백엔드 API 응답 코드가 아니라 로그인 페이지의 `page.goto` 또는 `locator.fill` 30초 timeout에서 발생했다.
+
+따라서 현재 결과만으로 Tomcat thread 10개를 30 VU 실패의 주요 병목으로 판단할 수 없다. Next.js 개발 서버와 로컬 Chromium 부하 생성기의 CPU·memory 포화가 함께 영향을 줄 수 있으므로 기본값 10을 유지하고, 최종 thread 결정은 백엔드 API 단독 부하에서 busy thread·queue·p99를 같이 측정한 뒤 수행한다.
+
 ## 완료 조건
 
 - 핵심 쿼리에서 `COLLSCAN`과 불필요한 `SORT` 제거
