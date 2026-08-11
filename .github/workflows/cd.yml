@@ -147,8 +147,8 @@ jobs:
           FILE_STORAGE_TYPE: ${{ vars.FILE_STORAGE_TYPE }}
           AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-          FILE_CDN_PUBLIC_URL_ENABLED: ${{ vars.FILE_CDN_PUBLIC_URL_ENABLED }}
-          FILE_CDN_BASE_URL: ${{ vars.FILE_CDN_BASE_URL }}
+          FILE_CDN_PUBLIC_URL_ENABLED: ${{ secrets.FILE_CDN_PUBLIC_URL_ENABLED }}
+          FILE_CDN_BASE_URL: ${{ secrets.FILE_CDN_BASE_URL }}
         run: |
           set -euo pipefail
 
