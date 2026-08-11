@@ -68,35 +68,43 @@ public class RoomLeaveHandler {
                 return;
             }
 
-            if (!userRooms.isInRoom(userId, roomId)) {
-                log.debug("User {} is not in room {}", userId, roomId);
-                return;
-            }
-
-            User user = userRepository.findById(userId).orElse(null);
-            Room room = roomRepository.findById(roomId).orElse(null);
-            
-            if (user == null || room == null) {
-                log.warn("Room {} not found or user {} has no access", roomId, userId);
-                return;
-            }
-            
-            roomRepository.removeParticipant(roomId, userId);
-            
             client.leaveRoom(roomId);
-            userRooms.remove(userId, roomId);
-            
-            log.info("User {} left room {}", userName, room.getName());
-            
-            log.debug("Leave room cleanup - roomId: {}, userId: {}", roomId, userId);
-            
-            sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
-            broadcastParticipantList(roomId);
+            leaveRoomByUser(userId, userName, roomId);
 
         } catch (Exception e) {
             log.error("Error handling leaveRoom", e);
             client.sendEvent(ERROR, Map.of("message", "채팅방 퇴장 중 오류가 발생했습니다."));
         }
+    }
+
+    /**
+     * 실제 퇴장 처리(참가자 제거 + 퇴장 시스템 메시지 + 참가자 목록 브로드캐스트).
+     *
+     * <p>연결이 끊긴 뒤 유예(grace)가 만료돼 실행되는 경우에는 라이브 {@link SocketIOClient}가 없으므로
+     * client에 의존하지 않는다(소켓의 leaveRoom은 disconnect로 이미 정리됨). 명시적 leaveRoom과
+     * disconnect-grace 만료가 공유하는 코어 로직.
+     */
+    public void leaveRoomByUser(String userId, String userName, String roomId) {
+        if (!userRooms.isInRoom(userId, roomId)) {
+            log.debug("User {} is not in room {}", userId, roomId);
+            return;
+        }
+
+        User user = userRepository.findById(userId).orElse(null);
+        Room room = roomRepository.findById(roomId).orElse(null);
+
+        if (user == null || room == null) {
+            log.warn("Room {} not found or user {} has no access", roomId, userId);
+            return;
+        }
+
+        roomRepository.removeParticipant(roomId, userId);
+        userRooms.remove(userId, roomId);
+
+        log.info("User {} left room {}", userName, room.getName());
+
+        sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
+        broadcastParticipantList(roomId);
     }
     
     private void sendSystemMessage(String roomId, String content) {
