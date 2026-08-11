@@ -45,7 +45,6 @@ export const useRoomHandling = ({
   const { user, refreshToken, logout } = useAuth();
   const setupPromiseRef = useRef(null);
   const roomEventsUnsubscribeRef = useRef(null);
-  const MAX_SOCKET_RECONNECT_ATTEMPTS = 3;
   const MAX_MESSAGE_RETRY_ATTEMPTS = 3;
   const MESSAGE_TIMEOUT = 5000;
   const MESSAGE_RETRY_DELAY = 2000;
@@ -143,7 +142,7 @@ export const useRoomHandling = ({
     return false;
   }, [user, refreshToken, mountedRef, logout, onReplace, asPath]);
 
-  const setupSocket = useCallback(async () => {
+  const getReadySocket = useCallback(async () => {
     try {
       if (!user?.token || !user?.sessionId) {
         throw new Error('Invalid authentication state');
@@ -153,52 +152,22 @@ export const useRoomHandling = ({
         return socketRef.current;
       }
 
-      if (socketRef.current) {
-        const currentSocket = socketRef.current;
-
-        if (userRooms.current?.get(currentSocket.id)) {
-          await new Promise((resolve) => {
-            socketClient.leaveRoom(
-              userRooms.current.get(currentSocket.id),
-              currentSocket
-            );
-            setTimeout(resolve, 1000);
-          });
-          userRooms.current.delete(currentSocket.id);
-        }
-
-        currentSocket.disconnect();
-        currentSocket.removeAllListeners();
-        attachSocket(null);
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-
       const socket = await socketClient.connect({
         auth: {
           token: user.token,
           sessionId: user.sessionId,
         },
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: MAX_SOCKET_RECONNECT_ATTEMPTS,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 3000,
-        timeout: 10000,
-        pingTimeout: 10000,
-        pingInterval: 8000,
-        forceNew: true,
-        autoConnect: true,
       });
+      attachSocket(socket);
 
-      return socket;
+      return socketRef.current;
     } catch (error) {
       if (error.message === 'Invalid authentication state') {
         onReplace('/?error=auth_required');
       }
       throw error;
     }
-  }, [userRooms, onReplace, socketRef, attachSocket, user]);
+  }, [onReplace, socketRef, attachSocket, user]);
 
   const fetchRoomData = useCallback(
     async (roomId) => {
@@ -329,15 +298,13 @@ export const useRoomHandling = ({
         return await loadMessagesWithRetry();
       } catch (error) {
         if (!socketRef.current?.connected) {
-          // setupSocket 은 낡은 소켓을 버리고 새 소켓을 반환한다. 받아서 걸어주지
-          // 않으면 ref 가 비어 있어 재시도가 곧바로 'Socket not connected' 로 죽는다.
-          attachSocket(await setupSocket());
+          await getReadySocket();
           return loadMessagesWithRetry();
         }
         throw error;
       }
     },
-    [socketRef, attachSocket, processMessages, setupSocket]
+    [socketRef, processMessages, getReadySocket]
   );
 
   const setupRoom = useCallback(async () => {
@@ -349,8 +316,8 @@ export const useRoomHandling = ({
       try {
         initializingRef.current = true;
         setupStarted();
-        // 1. Socket Setup
-        attachSocket(await setupSocket());
+        // 방 화면은 준비된 전역 소켓을 재사용하고, 비어 있을 때만 보강한다.
+        await getReadySocket();
 
         // 2. Fetch Room Data
         const roomData = await fetchRoomData(roomId);
@@ -406,11 +373,6 @@ export const useRoomHandling = ({
 
           setupFailed(errorMessage);
           cleanup('ERROR');
-
-          if (socketRef.current) {
-            socketRef.current.disconnect();
-            attachSocket(null);
-          }
         }
 
         throw error;
@@ -427,9 +389,8 @@ export const useRoomHandling = ({
   }, [
     roomId,
     socketRef,
-    attachSocket,
     mountedRef,
-    setupSocket,
+    getReadySocket,
     fetchRoomData,
     joinRoom,
     loadInitialMessages,
@@ -454,13 +415,6 @@ export const useRoomHandling = ({
       if (roomEventsUnsubscribeRef.current) {
         roomEventsUnsubscribeRef.current();
         roomEventsUnsubscribeRef.current = null;
-      }
-
-      // 언마운트 경로는 attachSocket 을 쓰지 않는다. 사라지는 컴포넌트에
-       // 소켓 교체를 통지할 구독자가 없다.
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
       }
     };
   }, []);

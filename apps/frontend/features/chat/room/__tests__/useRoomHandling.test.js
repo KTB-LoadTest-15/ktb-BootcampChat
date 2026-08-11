@@ -275,6 +275,19 @@ describe('useRoomHandling', () => {
     expect(harness.setupCompleteRef.current).toBe(true);
   });
 
+  it('reuses an already connected socket without reconnecting it', async () => {
+    const harness = createHarness();
+    const existingSocket = createSocket();
+    harness.socketRef.current = existingSocket;
+
+    await act(async () => {
+      await harness.result.current.setupRoom();
+    });
+
+    expect(socketClient.connect).not.toHaveBeenCalled();
+    expect(socketClient.joinRoomAndWait).toHaveBeenCalledWith('room-1', existingSocket);
+  });
+
   it('falls back to fetching previous messages when join response has no messages', async () => {
     socketClient.joinRoomAndWait.mockResolvedValueOnce({ roomId: 'room-1' });
     const harness = createHarness();
@@ -334,6 +347,7 @@ describe('useRoomHandling', () => {
         code: 'MESSAGE_REJECTED',
         message: '금칙어가 포함되어 메시지를 전송할 수 없습니다.',
       });
+      handlers.flushPendingMessages();
     });
 
     expect(harness.setters.setRoom).toHaveBeenCalledWith(expect.any(Function));
@@ -341,5 +355,16 @@ describe('useRoomHandling', () => {
     expect(harness.setters.setMessages).toHaveBeenCalled();
     expect(harness.setters.setHasMoreMessages).toHaveBeenCalledWith(true);
     expect(Toast.error).toHaveBeenCalledWith('금칙어가 포함되어 메시지를 전송할 수 없습니다.');
+  });
+
+  it('does not disconnect the shared socket on unmount', async () => {
+    const harness = createHarness();
+    const existingSocket = createSocket();
+    harness.socketRef.current = existingSocket;
+
+    harness.unmount();
+
+    expect(existingSocket.disconnect).not.toHaveBeenCalled();
+    expect(harness.socketRef.current).toBe(existingSocket);
   });
 });
