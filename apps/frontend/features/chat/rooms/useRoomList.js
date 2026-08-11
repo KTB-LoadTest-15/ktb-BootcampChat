@@ -14,6 +14,8 @@ export const useRoomList = ({
   const [refreshing, setRefreshing] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [joiningRoom, setJoiningRoom] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const pendingRequestRef = useRef(null);
   const lastSuccessfulFetchAtRef = useRef(0);
@@ -53,7 +55,12 @@ export const useRoomList = ({
     });
   }, [setConnectionStatus]);
 
-  const loadRooms = useCallback(({ staleAfterMs = 0, maxRetries } = {}) => {
+  const loadRooms = useCallback(({
+    staleAfterMs = 0,
+    maxRetries,
+    cursor = null,
+    append = false,
+  } = {}) => {
     if (pendingRequestRef.current) {
       return pendingRequestRef.current;
     }
@@ -65,17 +72,25 @@ export const useRoomList = ({
       return Promise.resolve({ skipped: true });
     }
 
-    const request = (
-      maxRetries === undefined
-        ? axiosInstance.get('/api/rooms')
-        : axiosInstance.get('/api/rooms', { maxRetries })
-    )
+    const requestConfig = {};
+    if (maxRetries !== undefined) requestConfig.maxRetries = maxRetries;
+    if (cursor) requestConfig.params = { cursor };
+
+    const request = (Object.keys(requestConfig).length === 0
+      ? axiosInstance.get('/api/rooms')
+      : axiosInstance.get('/api/rooms', requestConfig))
       .then((response) => {
         if (!response?.data?.data) {
           throw new Error('INVALID_RESPONSE');
         }
 
-        setRooms(response.data.data);
+        setRooms((previousRooms) => {
+          if (!append) return response.data.data;
+          const roomsById = new Map(previousRooms.map((room) => [room._id, room]));
+          response.data.data.forEach((room) => roomsById.set(room._id, room));
+          return Array.from(roomsById.values());
+        });
+        setNextCursor(response.data.metadata?.nextCursor || null);
         lastSuccessfulFetchAtRef.current = Date.now();
         return { skipped: false };
       })
@@ -88,6 +103,20 @@ export const useRoomList = ({
     pendingRequestRef.current = request;
     return request;
   }, []);
+
+  const loadMoreRooms = useCallback(async () => {
+    if (!nextCursor || loadingMore) return false;
+    try {
+      setLoadingMore(true);
+      await loadRooms({ cursor: nextCursor, append: true });
+      return true;
+    } catch (error) {
+      handleFetchError(error);
+      return false;
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore, loadRooms, handleFetchError]);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token) {
@@ -197,8 +226,11 @@ export const useRoomList = ({
     loading,
     refreshing,
     joiningRoom,
+    loadingMore,
+    hasMoreRooms: Boolean(nextCursor),
     fetchRooms,
     refreshRooms,
+    loadMoreRooms,
     handleJoinRoom,
   };
 };

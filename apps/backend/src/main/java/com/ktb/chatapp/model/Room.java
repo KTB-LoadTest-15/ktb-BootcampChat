@@ -10,8 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.IndexDirection;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -20,6 +19,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "rooms")
+@CompoundIndex(name = "rooms_created_at_id_desc", def = "{'createdAt': -1, '_id': -1}")
 public class Room {
 
     @Id
@@ -35,7 +35,6 @@ public class Room {
     private String password;
 
     @CreatedDate
-    @Indexed(name = "rooms_created_at_desc", direction = IndexDirection.DESCENDING)
     private LocalDateTime createdAt;
 
     @Field("participantIds")

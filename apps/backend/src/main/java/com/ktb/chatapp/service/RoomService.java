@@ -15,6 +15,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import org.springframework.data.domain.PageRequest;
+import org.bson.types.ObjectId;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -32,11 +36,19 @@ public class RoomService {
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
-    public RoomsResponse getAllRooms(String name) {
+    public RoomsResponse getAllRooms(String name, String encodedCursor, int requestedLimit) {
 
         try {
-            // MongoDB에서 최신순으로 정렬된 방 목록을 조회한다
-            List<Room> rooms = roomRepository.findAllByOrderByCreatedAtDesc();
+            int limit = Math.max(1, Math.min(requestedLimit, 100));
+            PageRequest pageRequest = PageRequest.of(0, limit + 1);
+            RoomCursor cursor = decodeCursor(encodedCursor);
+            List<Room> fetchedRooms = cursor == null
+                    ? roomRepository.findAllByOrderByCreatedAtDescIdDesc(pageRequest)
+                    : roomRepository.findNextPage(cursor.createdAt(), cursor.id(), pageRequest);
+            boolean hasMore = fetchedRooms.size() > limit;
+            List<Room> rooms = hasMore
+                    ? fetchedRooms.subList(0, limit)
+                    : fetchedRooms;
             Map<String, User> usersById = loadUsersById(rooms);
             Map<String, Long> recentMessageCounts = recentMessageCounter.countRecentMessages(
                     rooms.stream().map(Room::getId).toList());
@@ -47,12 +59,17 @@ public class RoomService {
                 .collect(Collectors.toList());
 
             PageMetadata metadata = PageMetadata.builder()
-                .total(roomResponses.size())
+                .total(-1)
                 .page(0)
-                .pageSize(roomResponses.size())
-                .totalPages(1)
-                .hasMore(false)
+                .pageSize(limit)
+                .totalPages(-1)
+                .hasMore(hasMore)
                 .currentCount(roomResponses.size())
+                .nextCursor(hasMore ? encodeCursor(rooms.get(rooms.size() - 1)) : null)
+                .sort(PageMetadata.SortInfo.builder()
+                    .field("createdAt,_id")
+                    .order("desc")
+                    .build())
                 .build();
 
             return RoomsResponse.builder()
@@ -61,6 +78,8 @@ public class RoomService {
                 .metadata(metadata)
                 .build();
 
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
             log.error("방 목록 조회 에러", e);
             return RoomsResponse.builder()
@@ -69,6 +88,31 @@ public class RoomService {
                 .build();
         }
     }
+
+    private String encodeCursor(Room room) {
+        String value = room.getCreatedAt() + "|" + room.getId();
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private RoomCursor decodeCursor(String encodedCursor) {
+        if (encodedCursor == null || encodedCursor.isBlank()) return null;
+        try {
+            String value = new String(
+                    Base64.getUrlDecoder().decode(encodedCursor), StandardCharsets.UTF_8);
+            int separator = value.lastIndexOf('|');
+            if (separator <= 0 || separator == value.length() - 1) {
+                throw new IllegalArgumentException("잘못된 방 목록 커서입니다.");
+            }
+            return new RoomCursor(
+                    LocalDateTime.parse(value.substring(0, separator)),
+                    new ObjectId(value.substring(separator + 1)));
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("잘못된 방 목록 커서입니다.", e);
+        }
+    }
+
+    private record RoomCursor(LocalDateTime createdAt, ObjectId id) {}
 
     public HealthResponse getHealthStatus() {
         long startTime = System.currentTimeMillis();
