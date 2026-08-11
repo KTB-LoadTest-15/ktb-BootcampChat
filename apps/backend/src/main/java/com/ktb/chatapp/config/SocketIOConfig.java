@@ -7,12 +7,18 @@ import com.corundumstudio.socketio.annotation.SpringAnnotationScanner;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
+import com.corundumstudio.socketio.store.RedissonStoreFactory;
+import com.corundumstudio.socketio.store.StoreFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +26,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Role;
+import org.springframework.util.StringUtils;
 
 import static org.springframework.beans.factory.config.BeanDefinition.ROLE_INFRASTRUCTURE;
 
@@ -37,8 +44,45 @@ public class SocketIOConfig {
     @Value("${socketio.server.origin:*}")
     private String origin;
 
+    /**
+     * Socket.IO 클라이언트/룸 레지스트리 및 이벤트 fan-out 저장소 선택.
+     * memory(기본)=단일노드 인메모리(MemoryStoreFactory). redisson=Redis 백업
+     * RedissonStoreFactory로, getRoomOperations(...).sendEvent(...) 브로드캐스트가
+     * 공유 Redis pub/sub을 통해 클러스터 전역으로 전달된다(다중 인스턴스 필수).
+     */
+    @Value("${socketio.store:memory}")
+    private String storeType;
+
+    @Value("${spring.data.redis.host:localhost}")
+    private String redisHost;
+
+    @Value("${spring.data.redis.port:6379}")
+    private int redisPort;
+
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
+    /**
+     * socketio.store=redisson일 때만 생성되는, Socket.IO 전용 RedissonClient.
+     * 애플리케이션의 spring.data.redis.* 설정과 같은 Redis 인스턴스를 가리킨다.
+     * netty-socketio의 RedissonStoreFactory가 이 클라이언트로 클러스터 전역 pub/sub을 수행한다.
+     */
+    @Bean(destroyMethod = "shutdown")
+    @ConditionalOnProperty(name = "socketio.store", havingValue = "redisson")
+    public RedissonClient socketIoRedissonClient() {
+        Config config = new Config();
+        var single = config.useSingleServer()
+                .setAddress("redis://" + redisHost + ":" + redisPort);
+        if (StringUtils.hasText(redisPassword)) {
+            single.setPassword(redisPassword);
+        }
+        log.info("Socket.IO RedissonStoreFactory enabled (redis://{}:{}) — cluster-wide broadcast", redisHost, redisPort);
+        return Redisson.create(config);
+    }
+
     @Bean(initMethod = "start", destroyMethod = "stop")
-    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener, MeterRegistry meterRegistry) {
+    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener, MeterRegistry meterRegistry,
+                                         ObjectProvider<RedissonClient> redissonProvider) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
         config.setPort(port);
@@ -61,10 +105,17 @@ public class SocketIOConfig {
         config.setUpgradeTimeout(10000);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
-        config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
 
-        log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
-                 host, port, config.getBossThreads(), config.getWorkerThreads());
+        // 저장소/브로드캐스트 팩토리: redisson이면 클러스터 전역(다중 인스턴스), 아니면 단일노드 인메모리.
+        RedissonClient redisson = redissonProvider.getIfAvailable();
+        StoreFactory storeFactory = (redisson != null)
+                ? new RedissonStoreFactory(redisson)
+                : new MemoryStoreFactory();
+        config.setStoreFactory(storeFactory);
+
+        log.info("Socket.IO server configured on {}:{} store={} ({} boss / {} worker threads)",
+                 host, port, storeFactory.getClass().getSimpleName(),
+                 config.getBossThreads(), config.getWorkerThreads());
         var socketIOServer = new SocketIOServer(config);
         socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
         socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addEventInterceptor((client, name, data, ack) -> {
